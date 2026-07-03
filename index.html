@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AskRepo v2 | AI Codebase Intelligence</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="logo">
+                <i class="fas fa-microchip"></i>
+                <span>AskRepo 2.0</span>
+            </div>
+            
+            <nav class="setup-stepper">
+                <div class="step" id="step-session">
+                    <div class="step-icon"><i class="fas fa-server"></i></div>
+                    <div class="step-info">
+                        <span class="step-label">Step 1</span>
+                        <span class="step-name">Connect Session</span>
+                    </div>
+                </div>
+                <div class="step" id="step-ollama">
+                    <div class="step-icon"><i class="fas fa-brain"></i></div>
+                    <div class="step-info">
+                        <span class="step-label">Step 2</span>
+                        <span class="step-name">Ollama & Model</span>
+                    </div>
+                </div>
+                <div class="step" id="step-repo">
+                    <div class="step-icon"><i class="fab fa-github"></i></div>
+                    <div class="step-info">
+                        <span class="step-label">Step 3</span>
+                        <span class="step-name">Clone & Index</span>
+                    </div>
+                </div>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div id="status-badge" class="badge disconnected">Disconnected</div>
+                <button id="end-session-btn" class="btn btn-outline" style="display:none;">
+                    <i class="fas fa-power-off"></i> Terminate
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Setup Dashboard (Visible until ready) -->
+            <section id="setup-dashboard" class="dashboard">
+                <div class="card welcome-card">
+                    <h1>Ready to explore code?</h1>
+                    <p>Connect your Colab backend to start indexing your repository with local LLMs.</p>
+                    <button id="start-setup-btn" class="btn btn-primary btn-lg">
+                        <i class="fas fa-play"></i> Initialize Environment
+                    </button>
+                </div>
+
+                <div class="repo-config-card card" style="display:none;" id="repo-card">
+                    <h3><i class="fab fa-github"></i> Repository Details</h3>
+                    <div class="input-group">
+                        <input type="text" id="repo-url" placeholder="username/repository" value="kushalkumarj2006/colab-orchestrator">
+                        <button id="confirm-repo-btn" class="btn btn-success">Confirm</button>
+                    </div>
+                    <p class="hint">Ensure the repository is public.</p>
+                </div>
+
+                <div class="console-card card">
+                    <div class="card-header">
+                        <span>Live Execution Log</span>
+                        <span id="exec-timer">00:00</span>
+                    </div>
+                    <div id="terminal" class="terminal">
+                        <div class="line">Waiting for initialization...</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Chat Interface (Hidden until ready) -->
+            <section id="chat-interface" class="chat-view" style="display:none;">
+                <div id="chat-messages" class="messages-container">
+                    <!-- Messages appear here -->
+                </div>
+                
+                <div class="input-area">
+                    <div class="chat-controls">
+                        <span id="current-repo-tag"></span>
+                        <div class="mode-toggle">
+                            <label><input type="radio" name="mode" value="fast" checked> ⚡ Fast</label>
+                            <label><input type="radio" name="mode" value="simple"> 💬 Simple</label>
+                        </div>
+                    </div>
+                    <div class="chat-input-wrapper">
+                        <input type="text" id="chat-input" placeholder="Ask anything about the codebase...">
+                        <button id="send-btn" class="btn btn-primary"><i class="fas fa-paper-plane"></i></button>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
