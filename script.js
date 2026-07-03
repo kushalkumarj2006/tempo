@@ -1,240 +1,532 @@
 // ============================================================
 // CONFIGURATION & AUTH
 // ============================================================
-const BACKEND_URL = 'https://tempo-agxk.onrender.com'; // Update to your Render URL
-let API_SECRET = localStorage.getItem('askrepo_secret');
+const BACKEND_URL = 'https://tempo-agxk.onrender.com';
+let SECRET_KEY = localStorage.getItem('askrepo_key') || '';
 
-if (!API_SECRET) {
-    API_SECRET = prompt("Enter Colab Orchestrator API Secret:");
-    if (API_SECRET) localStorage.setItem('askrepo_secret', API_SECRET);
+if (!SECRET_KEY) {
+    SECRET_KEY = prompt("Please enter your API Secret Key:");
+    if (SECRET_KEY) localStorage.setItem('askrepo_key', SECRET_KEY);
 }
 
-// ============================================================
-// ORIGINAL PYTHON CELLS (Updated with Absolute Paths)
-// ============================================================
-const CELL1 = `import subprocess, time
-print("🔧 Installing Ollama binary...")
-subprocess.run("curl -fsSL https://ollama.com/install.sh | sh", shell=True)
-subprocess.Popen("/usr/local/bin/ollama serve > /tmp/ollama.log 2>&1", shell=True)
-time.sleep(10)
-print("✅ Ollama server is active")`;
+function wakeUp(attempt = 1) {
+  fetch(`${BACKEND_URL}/health`)
+    .then(res => res.json())
+    .then(data => console.log('Backend:', data.status))
+    .catch(() => {
+      if (attempt < 3) setTimeout(() => wakeUp(attempt + 1), 2000);
+    });
+}
+wakeUp();
 
-const CELL2 = `import subprocess
-print("📥 Pulling model qwen2.5-coder:7b (this may take a minute)...")
-process = subprocess.Popen(
-    ["/usr/local/bin/ollama", "pull", "qwen2.5-coder:7b"],
+// ============================================================
+// PYTHON CELLS (Complete implementations)
+// ============================================================
+const CELL1 = `import subprocess, time, os
+print("🔧 Installing Ollama...")
+subprocess.run("apt-get update -qq && apt-get install -y zstd", shell=True, check=False)
+subprocess.run("curl -fsSL https://ollama.com/install.sh | sh", shell=True, check=False)
+
+# Ensure ollama is in PATH
+os.environ["PATH"] = os.environ.get("PATH", "") + ":/usr/local/bin"
+subprocess.Popen("ollama serve > /tmp/ollama.log 2>&1", shell=True)
+time.sleep(8)
+print("✅ Ollama installed and running")`;
+
+const CELL2 = `import subprocess, sys, time
+print("📥 Pulling qwen2.5-coder:7b...")
+proc = subprocess.Popen(
+    "ollama pull qwen2.5-coder:7b",
+    shell=True,
     stdout=subprocess.PIPE,
     stderr=subprocess.STDOUT,
-    text=True
+    text=True,
+    bufsize=1
 )
-for line in process.stdout:
+for line in proc.stdout:
     print(line, end='')
-print("✅ Model ready")`;
+    sys.stdout.flush()
+proc.wait()
+print("\\n✅ Model ready")`;
 
 const CELL3 = (url) => `import subprocess, os
-repo_path = "/content/repo"
-if os.path.exists(repo_path):
-    subprocess.run(f"rm -rf {repo_path}", shell=True)
-print(f"📡 Cloning ${url}...")
-subprocess.run(f"git clone ${url} {repo_path}", shell=True)
-print("✅ Repo cloned to /content/repo")`;
+target = "/content/repo"
+if os.path.exists(target):
+    subprocess.run(f"rm -rf {target}", shell=True)
+subprocess.run(f"git clone {url} {target}", shell=True, check=False)
+print("✅ Repo cloned to", target)`;
 
-const CELL4 = `import subprocess, json, re, os
+const CELL4 = `import subprocess, json, re, hashlib
 from pathlib import Path
 
-def ask_assistant(mode, question):
-    # logic using absolute path for execution
-    prompt = f"Repo: /content/repo. Mode: {mode}. Question: {question}"
-    try:
-        cmd = ["/usr/local/bin/ollama", "run", "qwen2.5-coder:7b", prompt]
-        return subprocess.check_output(cmd, text=True, timeout=120)
-    except Exception as e:
-        return str(e)
+print("📁 Indexing files...")
+repo_path = Path("/content/repo")
+file_contents = {}
+extensions = ['*.py', '*.js', '*.json', '*.yaml', '*.yml', '*.md', '*.txt', '*.sh', '*.html', '*.css']
+for ext in extensions:
+    for file_path in repo_path.rglob(ext):
+        try:
+            content = file_path.read_text(encoding='utf-8', errors='ignore')
+            rel_path = str(file_path.relative_to(repo_path))
+            file_contents[rel_path] = content.split('\\\\n')
+        except:
+            pass
+print(f"✅ Indexed {len(file_contents)} files")
 
-print("✅ Assistant Logic Initialized")`;
+# ============================================
+# Caching
+# ============================================
+cache = {}
+def get_cached_answer(question, context_hash):
+    key = f"{question[:50]}_{context_hash[:20]}"
+    return cache.get(key)
+
+def set_cached_answer(question, context_hash, answer):
+    key = f"{question[:50]}_{context_hash[:20]}"
+    cache[key] = answer
+
+# ============================================
+# Keyword expansion
+# ============================================
+def expand_keywords(question):
+    mappings = {
+        'login': ['login','sign in','auth','authenticate','credentials'],
+        'auth': ['auth','authentication','authorization','jwt','session'],
+        'api': ['api','endpoint','route','express','rest'],
+        'database': ['database','db','mongodb','mongoose','schema','sql'],
+        'user': ['user','users','profile','account'],
+        'server': ['server','app','express','node','backend'],
+        'config': ['config','configuration','settings','env'],
+        'test': ['test','tests','testing','jest','pytest']
+    }
+    words = question.lower().split()
+    expanded = set(words)
+    for w in words:
+        for key, vals in mappings.items():
+            if w in vals or w == key:
+                expanded.update(vals)
+                expanded.add(key)
+    return list(expanded)
+
+# ============================================
+# Relevance scoring
+# ============================================
+def score_files_fast(question, keywords):
+    scored = []
+    for fpath, lines in file_contents.items():
+        score = 0
+        pl = fpath.lower()
+        for kw in keywords[:15]:
+            if kw in pl:
+                score += 3
+        for line in lines[:50]:
+            ll = line.lower()
+            for kw in keywords[:15]:
+                if kw in ll:
+                    score += 1
+        if score > 0:
+            scored.append((score, fpath))
+    scored.sort(reverse=True, key=lambda x: x[0])
+    return scored[:4]
+
+# ============================================
+# ANSI cleaner
+# ============================================
+def clean_ansi(text):
+    ansi_escape = re.compile(r'\\\\x1b\\\\[[0-9;]*[a-zA-Z]')
+    text = ansi_escape.sub('', text)
+    text = re.sub(r'\\\\[?[0-9]+[a-zA-Z]', '', text)
+    text = re.sub(r'\\\\x1b\\\\[[0-9;]*m', '', text)
+    return '\\\\n'.join(line.strip() for line in text.split('\\\\n') if line.strip())
+
+# ============================================
+# Fast mode (with context)
+# ============================================
+def ask_fast(question):
+    print(f"\\\\n🤔 {question}")
+    keywords = expand_keywords(question)
+    scored = score_files_fast(question, keywords)
+    if not scored:
+        print("❌ No relevant files found. Try a different question.")
+        return "No relevant files found."
+    
+    context = ""
+    for score, fpath in scored[:3]:
+        lines = file_contents[fpath]
+        context += f"\\\\n📁 {fpath}\\\\n"
+        matches = []
+        for i, line in enumerate(lines):
+            ll = line.lower()
+            for kw in keywords[:10]:
+                if kw in ll:
+                    start = max(0, i-5)
+                    end = min(len(lines), i+6)
+                    matches.append((i, lines[start:end]))
+                    break
+            if len(matches) >= 10:
+                break
+        if matches:
+            for i, block in matches[:8]:
+                context += f"  L{i+1}: {''.join(block)}\\\\n"
+        else:
+            context += '\\\\n'.join(lines[:20]) + "\\\\n"
+    
+    if len(context) > 4000:
+        context = context[:4000] + "\\\\n... (truncated)"
+    
+    prompt = f"""Codebase context:
+{context}
+
+Question: {question}
+
+Answer briefly and clearly, referencing file names if relevant."""
+    print("🧠 Thinking...")
+    proc = subprocess.Popen(
+        ["ollama", "run", "qwen2.5-coder:7b"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True
+    )
+    stdout, _ = proc.communicate(input=prompt, timeout=120)
+    clean = clean_ansi(stdout)
+    print(clean)
+    return clean
+
+# ============================================
+# Simple mode (no context)
+# ============================================
+def ask_simple(question):
+    print(f"\\\\n🤔 {question}")
+    proc = subprocess.Popen(
+        ["ollama", "run", "qwen2.5-coder:7b"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True
+    )
+    stdout, _ = proc.communicate(input=question, timeout=60)
+    clean = clean_ansi(stdout)
+    print(clean)
+    return clean
+
+print("\\\\n✅ Ready!")
+print("📝 Ask questions using ask_fast('question') or ask_simple('question')")`;
 
 // ============================================================
-// DOM ELEMENTS
+// DOM REFS
 // ============================================================
-const terminal = document.getElementById('terminal');
 const startBtn = document.getElementById('start-setup-btn');
-const endBtn = document.getElementById('end-session-btn');
-const repoCard = document.getElementById('repo-card');
-const repoUrlInput = document.getElementById('repo-url');
+const endSessionBtn = document.getElementById('end-session-btn');
 const confirmRepoBtn = document.getElementById('confirm-repo-btn');
+const repoInput = document.getElementById('repo-url');
+const terminal = document.getElementById('terminal');
+const statusBadge = document.getElementById('status-badge');
+const chatMessages = document.getElementById('chat-messages');
+const questionInput = document.getElementById('chat-input');
+const sendBtn = document.getElementById('send-btn');
 const setupDashboard = document.getElementById('setup-dashboard');
 const chatInterface = document.getElementById('chat-interface');
-const chatMessages = document.getElementById('chat-messages');
-const chatInput = document.getElementById('chat-input');
-const sendBtn = document.getElementById('send-btn');
-const statusBadge = document.getElementById('status-badge');
-
-// Stepper
 const stepSession = document.getElementById('step-session');
 const stepOllama = document.getElementById('step-ollama');
 const stepRepo = document.getElementById('step-repo');
 
 // ============================================================
-// CORE LOGIC
+// STATE
 // ============================================================
 let sessionId = null;
+let cellRunning = false;
+let repoConfirmed = false;
+let repoUrl = '';
+let pollTimer = null;
+let currentExecId = null;
 
-function logToTerminal(msg, isError = false) {
-    const line = document.createElement('div');
-    line.className = 'line';
-    if (isError) line.style.color = 'var(--error)';
-    line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-    terminal.appendChild(line);
-    terminal.scrollTop = terminal.scrollHeight;
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function logToTerminal(msg, type = 'info') {
+  const line = document.createElement('div');
+  line.className = 'line';
+  if (type === 'error') line.style.color = 'var(--error)';
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  terminal.appendChild(line);
+  terminal.scrollTop = terminal.scrollHeight;
 }
 
-async function api(endpoint, method = 'GET', body = null) {
-    const options = {
-        method,
-        headers: { 'Content-Type': 'application/json', 'api-secret': API_SECRET }
-    };
-    if (body) options.body = JSON.stringify(body);
-    const res = await fetch(`${BACKEND_URL}${endpoint}`, options);
-    return await res.json();
+function clearTerminal() {
+  terminal.innerHTML = '';
 }
 
-async function executeCell(code, cellNo, onPartial = null) {
-    const start = await api('/exec', 'POST', { sessionId, code, cellNo });
-    if (start.error) throw new Error(start.error);
-    
-    const executionId = start.executionId;
-    
-    while (true) {
-        await new Promise(r => setTimeout(r, 3000));
-        const check = await api(`/exec-status?sessionId=${sessionId}&executionId=${executionId}`);
-        
-        if (check.partialOutput) {
-            logToTerminal(check.partialOutput.split('\n').pop()); // Log last line of partial
-            if (onPartial) onPartial(check.partialOutput);
+// ============================================================
+// BACKEND API (v3.9 Compatible)
+// ============================================================
+async function apiCall(endpoint, body = null, method = 'POST') {
+  const headers = {
+    'Content-Type': 'application/json',
+    'api-secret': SECRET_KEY
+  };
+  const options = { method, headers };
+  if (body && method !== 'GET' && method !== 'DELETE') {
+    options.body = JSON.stringify(body);
+  }
+
+  const response = await fetch(`${BACKEND_URL}${endpoint}`, options);
+  const text = await response.text();
+  let data;
+  try { data = JSON.parse(text); } catch { data = { raw: text }; }
+
+  if (!response.ok) {
+    throw new Error(data.error || data.message || `HTTP ${response.status}`);
+  }
+  return data;
+}
+
+async function checkStatus(executionId) {
+  return await apiCall(
+    `/exec-status?sessionId=${sessionId}&executionId=${executionId}`,
+    null,
+    'GET'
+  );
+}
+
+// ============================================================
+// EXECUTE CELL (Fixed for v3.9)
+// ============================================================
+async function executeCell(cellNo, code) {
+  logToTerminal(`▶️ Starting cell ${cellNo}...`);
+  
+  const result = await apiCall('/exec', { sessionId, code, cellNo });
+  
+  if (result.status === 'processing') {
+    currentExecId = result.executionId;
+    return new Promise((resolve, reject) => {
+      let attempts = 0;
+      const maxAttempts = 300;
+
+      pollTimer = setInterval(async () => {
+        attempts++;
+        try {
+          const status = await checkStatus(currentExecId);
+          
+          // Update terminal with partial output
+          if (status.partialOutput) {
+            // Clear and show latest
+            const lastLine = terminal.lastElementChild;
+            if (lastLine && lastLine.textContent.includes('▶️')) {
+              // Don't overwrite the "Starting" line
+            }
+            // Add progress as new lines
+            const progressLines = status.partialOutput.split('\n').filter(l => l.trim());
+            for (const line of progressLines.slice(-3)) {
+              const pLine = document.createElement('div');
+              pLine.className = 'line';
+              pLine.textContent = line;
+              terminal.appendChild(pLine);
+            }
+            terminal.scrollTop = terminal.scrollHeight;
+          }
+
+          if (status.status === 'completed') {
+            clearInterval(pollTimer);
+            pollTimer = null;
+            const output = status.output || '(No output)';
+            logToTerminal(`✅ Cell ${cellNo} completed`);
+            resolve(output);
+          } else if (status.status === 'failed') {
+            clearInterval(pollTimer);
+            pollTimer = null;
+            reject(new Error(status.error || 'Execution failed'));
+          }
+
+          if (attempts >= maxAttempts) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+            reject(new Error('Polling timeout'));
+          }
+        } catch (err) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+          reject(err);
         }
-
-        if (check.status === 'completed') {
-            logToTerminal(`Cell ${cellNo} completed.`);
-            return check.output;
-        } else if (check.status === 'failed') {
-            throw new Error(check.error || "Execution failed");
-        }
-    }
+      }, 5000);
+    });
+  }
+  return result.output;
 }
 
 // ============================================================
-// WORKFLOW HANDLERS
+// MAIN SETUP WORKFLOW
 // ============================================================
+async function startSetup() {
+  if (cellRunning) return;
+  if (!SECRET_KEY) {
+    logToTerminal('❌ API key required. Refresh and enter key.', 'error');
+    return;
+  }
 
-startBtn.onclick = async () => {
-    try {
-        startBtn.disabled = true;
-        startBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Initializing...';
-        
-        // STEP 1: Session
-        stepSession.classList.add('active');
-        logToTerminal("Requesting new Colab VM...");
-        const sessionRes = await api('/new', 'POST', { gpu: 'T4' });
-        if (!sessionRes.success) throw new Error(sessionRes.details || "Limit reached");
-        
-        sessionId = sessionRes.sessionId;
-        statusBadge.className = 'badge connected';
-        statusBadge.textContent = `CONNECTED: ${sessionId.substring(0,8)}`;
-        endBtn.style.display = 'inline-flex';
-        stepSession.classList.replace('active', 'completed');
+  cellRunning = true;
+  startBtn.disabled = true;
+  clearTerminal();
 
-        // STEP 2: Ollama
-        stepOllama.classList.add('active');
-        await executeCell(CELL1, 1);
-        await executeCell(CELL2, 2);
-        stepOllama.classList.replace('active', 'completed');
+  try {
+    // Step 1: Session
+    stepSession.classList.add('active');
+    logToTerminal("⏳ Creating Colab session...");
+    
+    const sessionData = await apiCall('/new', { gpu: 'T4' });
+    sessionId = sessionData.sessionId;
+    
+    statusBadge.className = 'badge connected';
+    statusBadge.textContent = `CONNECTED: ${sessionId.slice(0, 8)}`;
+    endSessionBtn.style.display = 'inline-flex';
+    stepSession.classList.replace('active', 'completed');
+    logToTerminal(`✅ Session created: ${sessionId.slice(0, 12)}...`);
 
-        // Transition to Repo Config
-        repoCard.style.display = 'block';
-        logToTerminal("Environment ready. Please provide GitHub repository.");
+    // Step 2: Install Ollama
+    stepOllama.classList.add('active');
+    await executeCell(1, CELL1);
+    
+    // Step 3: Pull Model
+    await executeCell(2, CELL2);
+    stepOllama.classList.replace('active', 'completed');
 
-    } catch (err) {
-        logToTerminal(err.message, true);
-        startBtn.disabled = false;
-        startBtn.textContent = "Retry Setup";
+    // Step 4: Wait for Repo
+    document.getElementById('repo-card').style.display = 'block';
+    logToTerminal("⏳ Waiting for repository URL...");
+    while (!repoConfirmed) {
+      await sleep(500);
+      if (!cellRunning) break;
     }
-};
-
-confirmRepoBtn.onclick = async () => {
-    const url = repoUrlInput.value.trim();
-    if (!url) return;
-    const fullUrl = url.startsWith('http') ? url : `https://github.com/${url}`;
-
-    try {
-        confirmRepoBtn.disabled = true;
-        stepRepo.classList.add('active');
-        
-        await executeCell(CELL3(fullUrl), 3);
-        await executeCell(CELL4, 4);
-        
-        stepRepo.classList.replace('active', 'completed');
-        logToTerminal("Indexing complete. Launching chat...");
-
-        // Switch UI
-        setTimeout(() => {
-            setupDashboard.style.display = 'none';
-            chatInterface.style.display = 'flex';
-            document.getElementById('current-repo-tag').textContent = `📦 ${url}`;
-            addChatMessage("bot", `I've finished indexing **${url}**. Ask me anything!`);
-        }, 1000);
-
-    } catch (err) {
-        logToTerminal(err.message, true);
-        confirmRepoBtn.disabled = false;
+    if (!repoConfirmed) {
+      throw new Error('Repository not confirmed');
     }
-};
 
-// ============================================================
-// CHAT INTERFACE
-// ============================================================
+    // Step 5: Clone Repo
+    stepRepo.classList.add('active');
+    logToTerminal(`📦 Cloning ${repoUrl}...`);
+    await executeCell(3, CELL3(repoUrl));
 
-function addChatMessage(role, text) {
-    const div = document.createElement('div');
-    div.className = `msg ${role}`;
-    div.innerHTML = text.replace(/\n/g, '<br>');
-    chatMessages.appendChild(div);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-    return div;
+    // Step 6: Index
+    logToTerminal("📁 Indexing repository...");
+    await executeCell(4, CELL4);
+    stepRepo.classList.replace('active', 'completed');
+
+    // Done
+    logToTerminal("🎉 All setup complete! Launching chat...");
+    statusBadge.textContent = '🟢 READY';
+    
+    setTimeout(() => {
+      setupDashboard.style.display = 'none';
+      chatInterface.style.display = 'flex';
+    }, 1500);
+
+  } catch (err) {
+    logToTerminal(`❌ ${err.message}`, 'error');
+    console.error(err);
+    startBtn.disabled = false;
+  } finally {
+    cellRunning = false;
+  }
 }
 
-async function handleQuery() {
-    const q = chatInput.value.trim();
-    if (!q) return;
+// ============================================================
+// CHAT LOGIC
+// ============================================================
+async function askQuestion() {
+  const q = questionInput.value.trim();
+  if (!q || !sessionId) return;
+  
+  const mode = document.querySelector('input[name="mode"]:checked')?.value || 'fast';
+  
+  // Add user message
+  const userDiv = document.createElement('div');
+  userDiv.className = 'msg user';
+  userDiv.textContent = q;
+  chatMessages.appendChild(userDiv);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+  questionInput.value = '';
 
-    const mode = document.querySelector('input[name="mode"]:checked').value;
-    addChatMessage("user", q);
-    chatInput.value = '';
+  // Add bot placeholder
+  const botDiv = document.createElement('div');
+  botDiv.className = 'msg bot';
+  botDiv.textContent = '🧠 Thinking...';
+  chatMessages.appendChild(botDiv);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
 
-    const botDiv = addChatMessage("bot", '<i class="fas fa-robot"></i> Thinking...');
-
+  try {
+    // Build ask code - capture return value properly
+    const askCode = `
+import json, sys
+result = ask_${mode}("""${q.replace(/"/g, '\\"').replace(/\n/g, ' ')}""")
+# Ensure we print something valid
+if result is None:
+    result = "No response"
+print(json.dumps({"answer": result}))
+`;
+    const output = await executeCell(99, askCode);
+    
     try {
-        // v3.9 Captures stdout, so we must print the function return
-        const code = `print(ask_assistant("${mode}", """${q.replace(/"/g, '\\"')}"""))`;
-        
-        const answer = await executeCell(code, 99, (partial) => {
-            if (partial.trim()) botDiv.innerHTML = partial.replace(/\n/g, '<br>') + '...';
-        });
-        
-        botDiv.innerHTML = answer.trim();
-    } catch (err) {
-        botDiv.innerHTML = `<span style="color:var(--error)">Error: ${err.message}</span>`;
+      const parsed = JSON.parse(output);
+      botDiv.textContent = parsed.answer || output;
+    } catch {
+      botDiv.textContent = output.trim() || "No response.";
     }
+  } catch (err) {
+    botDiv.textContent = `❌ Error: ${err.message}`;
+  }
+  chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-sendBtn.onclick = handleQuery;
-chatInput.onkeypress = (e) => { if (e.key === 'Enter') handleQuery(); };
+// ============================================================
+// EVENT LISTENERS
+// ============================================================
+confirmRepoBtn.onclick = () => {
+  const raw = repoInput.value.trim();
+  if (!raw) {
+    logToTerminal('⚠️ Please enter a repository URL', 'error');
+    return;
+  }
+  repoUrl = raw.startsWith('http') ? raw : `https://github.com/${raw}`;
+  repoConfirmed = true;
+  confirmRepoBtn.disabled = true;
+  logToTerminal(`✅ Repository set: ${repoUrl}`);
+};
+
+startBtn.onclick = startSetup;
+sendBtn.onclick = askQuestion;
+questionInput.onkeydown = (e) => { if(e.key === 'Enter') askQuestion(); };
+
+endSessionBtn.onclick = async () => {
+  if (!sessionId) return;
+  if (!confirm("Terminate this session? All progress will be lost.")) return;
+  
+  endSessionBtn.disabled = true;
+  endSessionBtn.textContent = '⏳...';
+  
+  try {
+    await apiCall(`/session/${sessionId}`, null, 'DELETE');
+    logToTerminal('✅ Session terminated');
+    location.reload();
+  } catch (err) {
+    logToTerminal(`❌ ${err.message}`, 'error');
+    endSessionBtn.disabled = false;
+    endSessionBtn.textContent = '✕ End';
+  }
+};
 
 // ============================================================
-// TERMINATE
+// MODE TOGGLE STYLING
 // ============================================================
-endBtn.onclick = async () => {
-    if (confirm("Terminate Colab session?")) {
-        await api(`/session/${sessionId}`, 'DELETE');
-        location.reload();
-    }
-};
+document.querySelectorAll('input[name="mode"]').forEach(radio => {
+  radio.addEventListener('change', (e) => {
+    document.querySelectorAll('.mode-label').forEach(el => {
+      el.classList.toggle('active', el.querySelector('input').checked);
+    });
+  });
+});
+
+// ============================================================
+// INIT
+// ============================================================
+console.log('🚀 AskRepo v3.9 loaded');
+console.log(`📡 Backend: ${BACKEND_URL}`);
+if (SECRET_KEY) console.log('🔑 API key loaded');
