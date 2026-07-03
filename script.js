@@ -1,7 +1,7 @@
 // ============================================================
 // CONFIGURATION & AUTH
 // ============================================================
-const BACKEND_URL = 'https://tempo-agxk.onrender.com';
+const BACKEND_URL = 'https://tempo-agxk.onrender.com'; 
 let SECRET_KEY = localStorage.getItem('askrepo_key') || '';
 
 if (!SECRET_KEY) {
