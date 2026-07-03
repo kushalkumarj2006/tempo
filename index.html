@@ -1,88 +1,61 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AskRepo · Codebase Q&A</title>
-  <link rel="stylesheet" href="styles.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AskRepo v3.9 | AI Code Q&A</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-  <div id="app">
-    <!-- Header -->
-    <header>
-      <div class="header-left">
-        <button id="toggleSetup" class="icon-btn" title="Toggle setup panel">☰</button>
-        <h1>AskRepo <span class="subtitle">codebase Q&A</span></h1>
-      </div>
-      <div class="header-right">
-        <span id="sessionBadge" class="badge" style="display:none;"></span>
-        <button id="endBtn" class="btn btn-danger btn-sm" style="display:none;">✕ End</button>
-      </div>
-    </header>
+    <div id="app">
+        <aside class="sidebar">
+            <div class="logo"><i class="fas fa-code-branch"></i> AskRepo</div>
+            <div class="status-box">
+                <div id="status-dot" class="dot"></div>
+                <span id="status-text">Disconnected</span>
+            </div>
+            <nav class="steps">
+                <div class="step" id="step-1">1. Initialize VM</div>
+                <div class="step" id="step-2">2. Setup AI</div>
+                <div class="step" id="step-3">3. Index Repo</div>
+            </nav>
+            <div class="sidebar-actions">
+                <button id="start-btn" class="btn btn-primary"><i class="fas fa-play"></i> Start Setup</button>
+                <button id="terminate-btn" class="btn btn-danger" style="display:none;"><i class="fas fa-trash"></i> Kill Session</button>
+            </div>
+        </aside>
 
-    <!-- Setup Panel -->
-    <div id="setupPanel" class="setup-panel">
-      <div class="setup-grid">
-        <!-- Step 1: Session -->
-        <div class="setup-card">
-          <div class="step-header">
-            <span class="step-num" id="s1">1</span>
-            <h3>🧩 Session</h3>
-          </div>
-          <div class="step-body">
-            <button id="startBtn" class="btn btn-primary">▶ Start</button>
-            <button id="stopBtn" class="btn btn-danger" disabled>⏹ Stop</button>
-            <span class="status-label" id="sessionStatus">⏳ idle</span>
-          </div>
-          <div class="log-area" id="logArea">📋 Ready</div>
-        </div>
+        <main class="content">
+            <div id="setup-view" class="view">
+                <div class="card terminal-card">
+                    <div class="card-header">Live Output Log</div>
+                    <div id="terminal" class="terminal"></div>
+                </div>
+                <div class="card repo-card" id="repo-config" style="display:none;">
+                    <h3><i class="fab fa-github"></i> Repository</h3>
+                    <div class="input-group">
+                        <input type="text" id="repo-url" placeholder="username/repo" value="kushalkumarj2006/colab-orchestrator">
+                        <button id="index-btn" class="btn btn-success">Clone & Index</button>
+                    </div>
+                </div>
+            </div>
 
-        <!-- Step 2: Repo -->
-        <div class="setup-card">
-          <div class="step-header">
-            <span class="step-num" id="s2">2</span>
-            <h3>📦 Repository</h3>
-          </div>
-          <div class="step-body">
-            <input type="text" id="repoInput" placeholder="user/repo or URL" value="kushalkumarj2006/colab-orchestrator" />
-            <button id="confirmRepoBtn" class="btn btn-success">✅</button>
-          </div>
-          <div class="repo-display" id="repoDisplay">📁 not set</div>
-          <div class="step-status" id="repoStatus"></div>
-        </div>
-
-        <!-- Step 3: Index -->
-        <div class="setup-card" style="grid-column: 1 / -1;">
-          <div class="step-header">
-            <span class="step-num" id="s3">3</span>
-            <h3>🚀 Index &amp; Ready</h3>
-          </div>
-          <div class="step-body">
-            <span id="indexStatus">⏳ waiting</span>
-            <span id="fileStats" class="file-stats">📄 0 files</span>
-          </div>
-        </div>
-      </div>
+            <div id="chat-view" class="view" style="display:none;">
+                <div id="chat-messages"></div>
+                <div class="chat-input-row">
+                    <div class="mode-selector">
+                        <button class="mode-btn active" data-mode="fast">⚡ Fast</button>
+                        <button class="mode-btn" data-mode="simple">💬 Simple</button>
+                    </div>
+                    <div class="input-wrapper">
+                        <input type="text" id="chat-input" placeholder="Ask about the codebase...">
+                        <button id="send-btn"><i class="fas fa-paper-plane"></i></button>
+                    </div>
+                </div>
+            </div>
+        </main>
     </div>
-
-    <!-- Chat Area -->
-    <div class="chat-container">
-      <div class="chat-messages" id="messages">
-        <div class="empty-state">🤖 Ask a question after setup completes.</div>
-      </div>
-      <div class="chat-input">
-        <div class="input-row">
-          <input type="text" id="questionInput" placeholder="Ask about the codebase..." disabled />
-          <div class="btn-group">
-            <button id="askFastBtn" class="btn btn-primary" disabled>⚡ fast</button>
-            <button id="askSimpleBtn" class="btn btn-secondary" disabled>💬 simple</button>
-          </div>
-        </div>
-        <div class="chat-footer" id="chatFooter">⏳ Setup required</div>
-      </div>
-    </div>
-  </div>
-
-  <script src="script.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
