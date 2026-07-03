@@ -1,42 +1,89 @@
-// ============================================
-// CONFIGURATION
-// ============================================
-const BACKEND_URL = 'https://tempo-agxk.onrender.com'; // Ensure this matches your Render URL
+// ============================================================
+// CONFIGURATION & AUTH
+// ============================================================
+const BACKEND_URL = 'https://tempo-agxk.onrender.com'; // Update to your Render URL
 let API_SECRET = localStorage.getItem('askrepo_secret');
-let sessionId = null;
-let currentMode = 'fast';
 
-// 1. Authentication Prompt
 if (!API_SECRET) {
     API_SECRET = prompt("Enter Colab Orchestrator API Secret:");
     if (API_SECRET) localStorage.setItem('askrepo_secret', API_SECRET);
 }
 
-// DOM Elements
+// ============================================================
+// ORIGINAL PYTHON CELLS (Updated with Absolute Paths)
+// ============================================================
+const CELL1 = `import subprocess, time
+print("🔧 Installing Ollama binary...")
+subprocess.run("curl -fsSL https://ollama.com/install.sh | sh", shell=True)
+subprocess.Popen("/usr/local/bin/ollama serve > /tmp/ollama.log 2>&1", shell=True)
+time.sleep(10)
+print("✅ Ollama server is active")`;
+
+const CELL2 = `import subprocess
+print("📥 Pulling model qwen2.5-coder:7b (this may take a minute)...")
+process = subprocess.Popen(
+    ["/usr/local/bin/ollama", "pull", "qwen2.5-coder:7b"],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT,
+    text=True
+)
+for line in process.stdout:
+    print(line, end='')
+print("✅ Model ready")`;
+
+const CELL3 = (url) => `import subprocess, os
+repo_path = "/content/repo"
+if os.path.exists(repo_path):
+    subprocess.run(f"rm -rf {repo_path}", shell=True)
+print(f"📡 Cloning ${url}...")
+subprocess.run(f"git clone ${url} {repo_path}", shell=True)
+print("✅ Repo cloned to /content/repo")`;
+
+const CELL4 = `import subprocess, json, re, os
+from pathlib import Path
+
+def ask_assistant(mode, question):
+    # logic using absolute path for execution
+    prompt = f"Repo: /content/repo. Mode: {mode}. Question: {question}"
+    try:
+        cmd = ["/usr/local/bin/ollama", "run", "qwen2.5-coder:7b", prompt]
+        return subprocess.check_output(cmd, text=True, timeout=120)
+    except Exception as e:
+        return str(e)
+
+print("✅ Assistant Logic Initialized")`;
+
+// ============================================================
+// DOM ELEMENTS
+// ============================================================
 const terminal = document.getElementById('terminal');
-const startSetupBtn = document.getElementById('start-setup-btn');
-const endSessionBtn = document.getElementById('end-session-btn');
+const startBtn = document.getElementById('start-setup-btn');
+const endBtn = document.getElementById('end-session-btn');
 const repoCard = document.getElementById('repo-card');
-const dashboard = document.getElementById('setup-dashboard');
+const repoUrlInput = document.getElementById('repo-url');
+const confirmRepoBtn = document.getElementById('confirm-repo-btn');
+const setupDashboard = document.getElementById('setup-dashboard');
 const chatInterface = document.getElementById('chat-interface');
-const messagesContainer = document.getElementById('chat-messages');
+const chatMessages = document.getElementById('chat-messages');
 const chatInput = document.getElementById('chat-input');
+const sendBtn = document.getElementById('send-btn');
 const statusBadge = document.getElementById('status-badge');
 
-// Stepper Elements
+// Stepper
 const stepSession = document.getElementById('step-session');
 const stepOllama = document.getElementById('step-ollama');
 const stepRepo = document.getElementById('step-repo');
 
-// ============================================
-// UTILITIES
-// ============================================
+// ============================================================
+// CORE LOGIC
+// ============================================================
+let sessionId = null;
 
-function log(msg, isError = false) {
+function logToTerminal(msg, isError = false) {
     const line = document.createElement('div');
     line.className = 'line';
     if (isError) line.style.color = 'var(--error)';
-    line.textContent = `[${new Date().toLocaleTimeString()}] > ${msg}`;
+    line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
     terminal.appendChild(line);
     terminal.scrollTop = terminal.scrollHeight;
 }
@@ -44,202 +91,150 @@ function log(msg, isError = false) {
 async function api(endpoint, method = 'GET', body = null) {
     const options = {
         method,
-        headers: {
-            'Content-Type': 'application/json',
-            'api-secret': API_SECRET
-        }
+        headers: { 'Content-Type': 'application/json', 'api-secret': API_SECRET }
     };
     if (body) options.body = JSON.stringify(body);
-    
-    try {
-        const response = await fetch(`${BACKEND_URL}${endpoint}`, options);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return await response.json();
-    } catch (err) {
-        log(`API Error: ${err.message}`, true);
-        throw err;
-    }
+    const res = await fetch(`${BACKEND_URL}${endpoint}`, options);
+    return await res.json();
 }
 
-// THE POLLING ENGINE: Essential for v3.9 Backend
-async function runPython(code, cellNo) {
-    log(`Initializing Stage ${cellNo}...`);
+async function executeCell(code, cellNo, onPartial = null) {
+    const start = await api('/exec', 'POST', { sessionId, code, cellNo });
+    if (start.error) throw new Error(start.error);
     
-    // 1. Post the execution request
-    const response = await api('/exec', 'POST', { sessionId, code, cellNo });
-    if (response.error) throw new Error(response.error);
+    const executionId = start.executionId;
     
-    const executionId = response.executionId;
-    log(`Execution Started: ${executionId.substring(0, 8)}... (Polling status)`);
-
-    // 2. Poll /exec-status until finished
     while (true) {
-        // Wait 4 seconds between polls to avoid spamming
-        await new Promise(r => setTimeout(r, 4000));
+        await new Promise(r => setTimeout(r, 3000));
+        const check = await api(`/exec-status?sessionId=${sessionId}&executionId=${executionId}`);
         
-        const statusData = await api(`/exec-status?sessionId=${sessionId}&executionId=${executionId}`);
-        
-        if (statusData.status === 'completed') {
-            log(`Stage ${cellNo} Complete.`);
-            // Clean up completed execution from backend memory
-            api('/exec-ack', 'POST', { executionId }).catch(() => {});
-            return statusData.output; 
-        } else if (statusData.status === 'failed') {
-            log(`Stage ${cellNo} Failed: ${statusData.error}`, true);
-            throw new Error(statusData.error);
-        } else {
-            console.log("Still processing cell " + cellNo + "...");
+        if (check.partialOutput) {
+            logToTerminal(check.partialOutput.split('\n').pop()); // Log last line of partial
+            if (onPartial) onPartial(check.partialOutput);
+        }
+
+        if (check.status === 'completed') {
+            logToTerminal(`Cell ${cellNo} completed.`);
+            return check.output;
+        } else if (check.status === 'failed') {
+            throw new Error(check.error || "Execution failed");
         }
     }
 }
 
-// ============================================
-// SETUP WORKFLOW
-// ============================================
+// ============================================================
+// WORKFLOW HANDLERS
+// ============================================================
 
-startSetupBtn.onclick = async () => {
+startBtn.onclick = async () => {
     try {
-        startSetupBtn.disabled = true;
-        startSetupBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Initializing...';
-
-        // STEP 1: Session Creation
-        stepSession.classList.add('active');
-        const sessionRes = await api('/new', 'POST', { gpu: 'T4' });
+        startBtn.disabled = true;
+        startBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Initializing...';
         
-        if (!sessionRes.success) throw new Error(sessionRes.details || "Session limit reached");
+        // STEP 1: Session
+        stepSession.classList.add('active');
+        logToTerminal("Requesting new Colab VM...");
+        const sessionRes = await api('/new', 'POST', { gpu: 'T4' });
+        if (!sessionRes.success) throw new Error(sessionRes.details || "Limit reached");
         
         sessionId = sessionRes.sessionId;
         statusBadge.className = 'badge connected';
-        statusBadge.textContent = `ID: ${sessionId.substring(0,8)}`;
-        endSessionBtn.style.display = 'inline-flex';
-        
+        statusBadge.textContent = `CONNECTED: ${sessionId.substring(0,8)}`;
+        endBtn.style.display = 'inline-flex';
         stepSession.classList.replace('active', 'completed');
-        log("Session established successfully.");
 
-        // STEP 2: Ollama Setup
+        // STEP 2: Ollama
         stepOllama.classList.add('active');
-        const setupCode = `
-import subprocess, time
-print("INSTALL: Downloading Ollama...")
-subprocess.run("curl -fsSL https://ollama.com/install.sh | sh", shell=True)
-subprocess.Popen("ollama serve", shell=True)
-time.sleep(10)
-print("INSTALL: Pulling Qwen2.5-Coder (7B)...")
-subprocess.run("ollama pull qwen2.5-coder:7b", shell=True)
-print("SUCCESS: Environment Ready")
-        `;
-        await runPython(setupCode, 1);
+        await executeCell(CELL1, 1);
+        await executeCell(CELL2, 2);
         stepOllama.classList.replace('active', 'completed');
 
-        // Show Repo UI
+        // Transition to Repo Config
         repoCard.style.display = 'block';
-        log("Environment ready. Enter repository details to proceed.");
+        logToTerminal("Environment ready. Please provide GitHub repository.");
 
     } catch (err) {
-        startSetupBtn.disabled = false;
-        startSetupBtn.textContent = "Retry Setup";
-        log(err.message, true);
+        logToTerminal(err.message, true);
+        startBtn.disabled = false;
+        startBtn.textContent = "Retry Setup";
     }
 };
 
-document.getElementById('confirm-repo-btn').onclick = async () => {
-    const repoPath = document.getElementById('repo-url').value.trim();
-    if (!repoPath) return;
+confirmRepoBtn.onclick = async () => {
+    const url = repoUrlInput.value.trim();
+    if (!url) return;
+    const fullUrl = url.startsWith('http') ? url : `https://github.com/${url}`;
 
     try {
+        confirmRepoBtn.disabled = true;
         stepRepo.classList.add('active');
-        log(`Cloning and Indexing: ${repoPath}...`);
-
-        const indexCode = `
-import subprocess, os
-repo_name = "${repoPath}".split('/')[-1]
-if not os.path.exists(repo_name):
-    print(f"CLONE: Fetching {repo_name}...")
-    subprocess.run(f"git clone https://github.com/${repoPath}.git", shell=True)
-
-# AI Assistant Helpers
-def ask_assistant(mode, query):
-    import subprocess
-    # In 'fast' mode, we could add file indexing logic here
-    cmd = ["ollama", "run", "qwen2.5-coder:7b", query]
-    return subprocess.check_output(cmd, text=True)
-
-print(f"READY: ${repoPath} indexed.")
-        `;
-        await runPython(indexCode, 2);
+        
+        await executeCell(CELL3(fullUrl), 3);
+        await executeCell(CELL4, 4);
         
         stepRepo.classList.replace('active', 'completed');
-        log("Setup complete. Transitioning to Chat...");
+        logToTerminal("Indexing complete. Launching chat...");
 
-        // Switch to Chat View
+        // Switch UI
         setTimeout(() => {
-            dashboard.style.display = 'none';
+            setupDashboard.style.display = 'none';
             chatInterface.style.display = 'flex';
-            document.getElementById('current-repo-tag').textContent = `📦 ${repoPath}`;
-            addMessage("bot", `Hello! I've indexed **${repoPath}**. How can I help you understand this codebase?`);
-        }, 800);
+            document.getElementById('current-repo-tag').textContent = `📦 ${url}`;
+            addChatMessage("bot", `I've finished indexing **${url}**. Ask me anything!`);
+        }, 1000);
 
     } catch (err) {
-        log(err.message, true);
+        logToTerminal(err.message, true);
+        confirmRepoBtn.disabled = false;
     }
 };
 
-// ============================================
-// CHAT LOGIC
-// ============================================
+// ============================================================
+// CHAT INTERFACE
+// ============================================================
 
-function addMessage(role, text) {
-    const msg = document.createElement('div');
-    msg.className = `msg ${role}`;
-    msg.innerHTML = text.replace(/\n/g, '<br>');
-    messagesContainer.appendChild(msg);
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+function addChatMessage(role, text) {
+    const div = document.createElement('div');
+    div.className = `msg ${role}`;
+    div.innerHTML = text.replace(/\n/g, '<br>');
+    chatMessages.appendChild(div);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    return div;
 }
 
-async function sendQuery() {
-    const query = chatInput.value.trim();
-    if (!query) return;
+async function handleQuery() {
+    const q = chatInput.value.trim();
+    if (!q) return;
 
-    // Get selected mode (Fast or Simple)
-    currentMode = document.querySelector('input[name="mode"]:checked').value;
-
-    addMessage('user', query);
+    const mode = document.querySelector('input[name="mode"]:checked').value;
+    addChatMessage("user", q);
     chatInput.value = '';
 
-    // Temp bot bubble
-    const botMsg = document.createElement('div');
-    botMsg.className = 'msg bot';
-    botMsg.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Processing...';
-    messagesContainer.appendChild(botMsg);
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    const botDiv = addChatMessage("bot", '<i class="fas fa-robot"></i> Thinking...');
 
     try {
-        // v3.9 Captures STDOUT. We MUST use print() to get the result string.
-        const askCode = `print(ask_assistant("${currentMode}", """${query}"""))`;
-        const answer = await runPython(askCode, 99);
+        // v3.9 Captures stdout, so we must print the function return
+        const code = `print(ask_assistant("${mode}", """${q.replace(/"/g, '\\"')}"""))`;
         
-        botMsg.innerHTML = answer.trim();
+        const answer = await executeCell(code, 99, (partial) => {
+            if (partial.trim()) botDiv.innerHTML = partial.replace(/\n/g, '<br>') + '...';
+        });
+        
+        botDiv.innerHTML = answer.trim();
     } catch (err) {
-        botMsg.innerHTML = `<span style="color:var(--error)">Error: ${err.message}</span>`;
+        botDiv.innerHTML = `<span style="color:var(--error)">Error: ${err.message}</span>`;
     }
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
-document.getElementById('send-btn').onclick = sendQuery;
-chatInput.onkeypress = (e) => { if (e.key === 'Enter') sendQuery(); };
+sendBtn.onclick = handleQuery;
+chatInput.onkeypress = (e) => { if (e.key === 'Enter') handleQuery(); };
 
-// ============================================
-// TERMINATION
-// ============================================
-
-endSessionBtn.onclick = async () => {
-    if (confirm("Stop session and terminate the Colab VM?")) {
-        try {
-            await api(`/session/${sessionId}`, 'DELETE');
-            localStorage.removeItem('last_session_id');
-            location.reload();
-        } catch (e) {
-            location.reload(); // Force reload even if API fails
-        }
+// ============================================================
+// TERMINATE
+// ============================================================
+endBtn.onclick = async () => {
+    if (confirm("Terminate Colab session?")) {
+        await api(`/session/${sessionId}`, 'DELETE');
+        location.reload();
     }
 };
