@@ -53,7 +53,7 @@ const CELL3 = (url) => `import subprocess, os
 target = "/content/repo"
 if os.path.exists(target):
     subprocess.run(f"rm -rf {target}", shell=True)
-subprocess.run(f"git clone {url} {target}", shell=True, check=False)
+subprocess.run(f"git clone ${url} ${target}", shell=True, check=False)
 print("✅ Repo cloned to", target)`;
 
 const CELL4 = `import subprocess, json, re, hashlib
@@ -227,6 +227,7 @@ const questionInput = document.getElementById('chat-input');
 const sendBtn = document.getElementById('send-btn');
 const setupDashboard = document.getElementById('setup-dashboard');
 const chatInterface = document.getElementById('chat-interface');
+const currentRepoTag = document.getElementById('current-repo-tag');
 const stepSession = document.getElementById('step-session');
 const stepOllama = document.getElementById('step-ollama');
 const stepRepo = document.getElementById('step-repo');
@@ -246,7 +247,8 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function logToTerminal(msg, type = 'info') {
   const line = document.createElement('div');
   line.className = 'line';
-  if (type === 'error') line.style.color = 'var(--error)';
+  if (type === 'error') line.style.color = 'var(--accent-red)';
+  if (type === 'success') line.style.color = 'var(--accent-green)';
   line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
   terminal.appendChild(line);
   terminal.scrollTop = terminal.scrollHeight;
@@ -309,12 +311,6 @@ async function executeCell(cellNo, code) {
           
           // Update terminal with partial output
           if (status.partialOutput) {
-            // Clear and show latest
-            const lastLine = terminal.lastElementChild;
-            if (lastLine && lastLine.textContent.includes('▶️')) {
-              // Don't overwrite the "Starting" line
-            }
-            // Add progress as new lines
             const progressLines = status.partialOutput.split('\n').filter(l => l.trim());
             for (const line of progressLines.slice(-3)) {
               const pLine = document.createElement('div');
@@ -329,7 +325,7 @@ async function executeCell(cellNo, code) {
             clearInterval(pollTimer);
             pollTimer = null;
             const output = status.output || '(No output)';
-            logToTerminal(`✅ Cell ${cellNo} completed`);
+            logToTerminal(`✅ Cell ${cellNo} completed`, 'success');
             resolve(output);
           } else if (status.status === 'failed') {
             clearInterval(pollTimer);
@@ -379,7 +375,7 @@ async function startSetup() {
     statusBadge.textContent = `CONNECTED: ${sessionId.slice(0, 8)}`;
     endSessionBtn.style.display = 'inline-flex';
     stepSession.classList.replace('active', 'completed');
-    logToTerminal(`✅ Session created: ${sessionId.slice(0, 12)}...`);
+    logToTerminal(`✅ Session created: ${sessionId.slice(0, 12)}...`, 'success');
 
     // Step 2: Install Ollama
     stepOllama.classList.add('active');
@@ -400,6 +396,10 @@ async function startSetup() {
       throw new Error('Repository not confirmed');
     }
 
+    // Update repo tag
+    const repoDisplay = repoUrl.replace('https://github.com/', '');
+    currentRepoTag.textContent = `📦 ${repoDisplay}`;
+
     // Step 5: Clone Repo
     stepRepo.classList.add('active');
     logToTerminal(`📦 Cloning ${repoUrl}...`);
@@ -411,7 +411,8 @@ async function startSetup() {
     stepRepo.classList.replace('active', 'completed');
 
     // Done
-    logToTerminal("🎉 All setup complete! Launching chat...");
+    logToTerminal("🎉 All setup complete! Launching chat...", 'success');
+    statusBadge.className = 'badge ready';
     statusBadge.textContent = '🟢 READY';
     
     setTimeout(() => {
@@ -435,7 +436,8 @@ async function askQuestion() {
   const q = questionInput.value.trim();
   if (!q || !sessionId) return;
   
-  const mode = document.querySelector('input[name="mode"]:checked')?.value || 'fast';
+  const modeRadio = document.querySelector('input[name="mode"]:checked');
+  const mode = modeRadio ? modeRadio.value : 'fast';
   
   // Add user message
   const userDiv = document.createElement('div');
@@ -453,11 +455,9 @@ async function askQuestion() {
   chatMessages.scrollTop = chatMessages.scrollHeight;
 
   try {
-    // Build ask code - capture return value properly
     const askCode = `
 import json, sys
 result = ask_${mode}("""${q.replace(/"/g, '\\"').replace(/\n/g, ' ')}""")
-# Ensure we print something valid
 if result is None:
     result = "No response"
 print(json.dumps({"answer": result}))
@@ -488,7 +488,7 @@ confirmRepoBtn.onclick = () => {
   repoUrl = raw.startsWith('http') ? raw : `https://github.com/${raw}`;
   repoConfirmed = true;
   confirmRepoBtn.disabled = true;
-  logToTerminal(`✅ Repository set: ${repoUrl}`);
+  logToTerminal(`✅ Repository set: ${repoUrl}`, 'success');
 };
 
 startBtn.onclick = startSetup;
@@ -500,16 +500,16 @@ endSessionBtn.onclick = async () => {
   if (!confirm("Terminate this session? All progress will be lost.")) return;
   
   endSessionBtn.disabled = true;
-  endSessionBtn.textContent = '⏳...';
+  endSessionBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
   
   try {
     await apiCall(`/session/${sessionId}`, null, 'DELETE');
-    logToTerminal('✅ Session terminated');
-    location.reload();
+    logToTerminal('✅ Session terminated', 'success');
+    setTimeout(() => location.reload(), 1000);
   } catch (err) {
     logToTerminal(`❌ ${err.message}`, 'error');
     endSessionBtn.disabled = false;
-    endSessionBtn.textContent = '✕ End';
+    endSessionBtn.innerHTML = '<i class="fas fa-power-off"></i> Terminate';
   }
 };
 
@@ -518,10 +518,18 @@ endSessionBtn.onclick = async () => {
 // ============================================================
 document.querySelectorAll('input[name="mode"]').forEach(radio => {
   radio.addEventListener('change', (e) => {
-    document.querySelectorAll('.mode-label').forEach(el => {
+    document.querySelectorAll('.mode-toggle label').forEach(el => {
       el.classList.toggle('active', el.querySelector('input').checked);
     });
   });
+});
+
+// Initialize mode toggle
+document.querySelectorAll('.mode-toggle label').forEach(el => {
+  const radio = el.querySelector('input');
+  if (radio && radio.checked) {
+    el.classList.add('active');
+  }
 });
 
 // ============================================================
@@ -530,3 +538,8 @@ document.querySelectorAll('input[name="mode"]').forEach(radio => {
 console.log('🚀 AskRepo v3.9 loaded');
 console.log(`📡 Backend: ${BACKEND_URL}`);
 if (SECRET_KEY) console.log('🔑 API key loaded');
+
+// Check if we have a stored session
+if (localStorage.getItem('askrepo_session')) {
+  console.log('📌 Previous session found:', localStorage.getItem('askrepo_session'));
+}
