@@ -1,4 +1,4 @@
-const BACKEND_URL = 'https://tempo-agxk.onrender.com'; // Update this to your Render URL
+const BACKEND_URL = 'https://tempo-agxk.onrender.com';
 let API_SECRET = localStorage.getItem('askrepo_secret');
 let sessionId = null;
 let currentRepo = "";
