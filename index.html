@@ -3,105 +3,265 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AskRepo v2 | AI Codebase Intelligence</title>
-    <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <title>ColabBridge Chatbot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .chat-height { height: calc(100vh - 380px); }
+        .log-height { height: 120px; }
+        .hide-scroll::-webkit-scrollbar { width: 0px; }
+        @keyframes pulse-blue { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .loading-pulse { animation: pulse-blue 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    </style>
 </head>
-<body>
-    <div id="app">
-        <!-- Sidebar Navigation -->
-        <aside class="sidebar">
-            <div class="logo">
-                <i class="fas fa-microchip"></i>
-                <span>AskRepo 2.0</span>
+<body class="bg-slate-950 text-slate-200 font-sans">
+
+    <div class="max-w-5xl mx-auto p-4 md:p-8">
+        <!-- HEADER -->
+        <div class="flex flex-wrap items-center justify-between gap-4 mb-6 pb-6 border-b border-slate-800">
+            <div>
+                <h1 class="text-2xl font-black bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">COLAB BRIDGE AI</h1>
+                <p id="status-text" class="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold">Status: Offline</p>
             </div>
             
-            <nav class="setup-stepper">
-                <div class="step" id="step-session">
-                    <div class="step-icon"><i class="fas fa-server"></i></div>
-                    <div class="step-info">
-                        <span class="step-label">Step 1</span>
-                        <span class="step-name">Connect Session</span>
-                    </div>
-                </div>
-                <div class="step" id="step-ollama">
-                    <div class="step-icon"><i class="fas fa-brain"></i></div>
-                    <div class="step-info">
-                        <span class="step-label">Step 2</span>
-                        <span class="step-name">Ollama & Model</span>
-                    </div>
-                </div>
-                <div class="step" id="step-repo">
-                    <div class="step-icon"><i class="fab fa-github"></i></div>
-                    <div class="step-info">
-                        <span class="step-label">Step 3</span>
-                        <span class="step-name">Clone & Index</span>
-                    </div>
-                </div>
-            </nav>
-
-            <div class="sidebar-footer">
-                <div id="status-badge" class="badge disconnected">Disconnected</div>
-                <button id="end-session-btn" class="btn btn-outline" style="display:none;">
-                    <i class="fas fa-power-off"></i> Terminate
-                </button>
+            <div class="flex flex-wrap gap-2">
+                <input id="api-url" type="text" placeholder="Backend URL (Render)" class="bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-xs w-48 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                <input id="api-secret" type="password" placeholder="API Secret" class="bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-xs w-32 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                <button id="btn-connect" onclick="initSystem()" class="bg-blue-600 hover:bg-blue-500 px-4 py-1.5 rounded text-xs font-bold transition">INITIALIZE</button>
             </div>
-        </aside>
+        </div>
 
-        <!-- Main Content -->
-        <main class="main-content">
-            <!-- Setup Dashboard (Visible until ready) -->
-            <section id="setup-dashboard" class="dashboard">
-                <div class="card welcome-card">
-                    <h1>Ready to explore code?</h1>
-                    <p>Connect your Colab backend to start indexing your repository with local LLMs.</p>
-                    <button id="start-setup-btn" class="btn btn-primary btn-lg">
-                        <i class="fas fa-play"></i> Initialize Environment
-                    </button>
+        <!-- SETUP PANEL -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="md:col-span-2 bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
+                <label class="block text-[10px] uppercase text-slate-500 font-black mb-2">Target GitHub Repository</label>
+                <div class="flex gap-2">
+                    <input id="repo-url" type="text" value="https://github.com/kushalkumarj2006/repochat" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-2 text-sm focus:outline-none">
+                    <button id="btn-bootstrap" onclick="bootstrapAI()" disabled class="bg-emerald-600 disabled:bg-slate-700 disabled:cursor-not-allowed hover:bg-emerald-500 px-6 py-2 rounded-lg text-sm font-bold transition whitespace-nowrap">CLONE & INDEX</button>
                 </div>
+            </div>
+            <div class="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
+                <label class="block text-[10px] uppercase text-slate-500 font-black mb-2">Session Info</label>
+                <div id="session-display" class="text-xs font-mono text-blue-400">No active session</div>
+            </div>
+        </div>
 
-                <div class="repo-config-card card" style="display:none;" id="repo-card">
-                    <h3><i class="fab fa-github"></i> Repository Details</h3>
-                    <div class="input-group">
-                        <input type="text" id="repo-url" placeholder="username/repository" value="kushalkumarj2006/colab-orchestrator">
-                        <button id="confirm-repo-btn" class="btn btn-success">Confirm</button>
-                    </div>
-                    <p class="hint">Ensure the repository is public.</p>
-                </div>
+        <!-- CHAT AREA -->
+        <div id="chat-box" class="chat-height overflow-y-auto bg-slate-900/30 rounded-xl p-6 border border-slate-800 mb-6 flex flex-col gap-4 hide-scroll">
+            <div class="text-center my-auto opacity-20 italic">Initialise the backend to start the AI session...</div>
+        </div>
 
-                <div class="console-card card">
-                    <div class="card-header">
-                        <span>Live Execution Log</span>
-                        <span id="exec-timer">00:00</span>
-                    </div>
-                    <div id="terminal" class="terminal">
-                        <div class="line">Waiting for initialization...</div>
-                    </div>
-                </div>
-            </section>
+        <!-- INPUT -->
+        <div class="relative max-w-4xl mx-auto">
+            <input id="user-query" type="text" disabled placeholder="Type your question about the repo..." 
+                class="w-full bg-slate-800 border border-slate-700 rounded-full px-6 py-4 pr-16 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                onkeypress="if(event.key==='Enter') askQuestion()">
+            <button id="btn-send" onclick="askQuestion()" disabled class="absolute right-3 top-3 bg-blue-600 p-2 rounded-full hover:bg-blue-500 transition disabled:bg-slate-700">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l7 7m-7-7H3" /></svg>
+            </button>
+        </div>
 
-            <!-- Chat Interface (Hidden until ready) -->
-            <section id="chat-interface" class="chat-view" style="display:none;">
-                <div id="chat-messages" class="messages-container">
-                    <!-- Messages appear here -->
-                </div>
-                
-                <div class="input-area">
-                    <div class="chat-controls">
-                        <span id="current-repo-tag"></span>
-                        <div class="mode-toggle">
-                            <label><input type="radio" name="mode" value="fast" checked> ⚡ Fast</label>
-                            <label><input type="radio" name="mode" value="simple"> 💬 Simple</label>
-                        </div>
-                    </div>
-                    <div class="chat-input-wrapper">
-                        <input type="text" id="chat-input" placeholder="Ask anything about the codebase...">
-                        <button id="send-btn" class="btn btn-primary"><i class="fas fa-paper-plane"></i></button>
-                    </div>
-                </div>
-            </section>
-        </main>
+        <!-- LOGS -->
+        <div class="mt-8">
+            <p class="text-[10px] font-black uppercase text-slate-600 mb-2">System Console Logs</p>
+            <div id="logs" class="log-height bg-black/40 rounded-lg p-3 font-mono text-[10px] text-slate-400 overflow-y-auto border border-slate-900">
+                > System ready. Waiting for initialization...
+            </div>
+        </div>
     </div>
-    <script src="script.js"></script>
+
+    <script>
+        let sessionId = null;
+        let isProcessing = false;
+        const POLL_INTERVAL = 3000;
+
+        function log(msg, type = 'info') {
+            const logs = document.getElementById('logs');
+            const color = type === 'error' ? 'text-red-500' : type === 'success' ? 'text-emerald-400' : 'text-slate-400';
+            logs.innerHTML += `<div class="${color}">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        function updateStatus(text, colorClass) {
+            const el = document.getElementById('status-text');
+            el.innerText = `Status: ${text}`;
+            el.className = `text-[10px] uppercase tracking-[0.2em] font-bold ${colorClass}`;
+        }
+
+        async function apiRequest(endpoint, method = 'POST', body = {}) {
+            const url = document.getElementById('api-url').value.replace(/\/$/, '');
+            const secret = document.getElementById('api-secret').value;
+            
+            if(!url || !secret) {
+                alert("Please enter Backend URL and API Secret");
+                throw "Missing Config";
+            }
+
+            const response = await fetch(`${url}${endpoint}`, {
+                method,
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'api-secret': secret
+                },
+                body: method === 'POST' ? JSON.stringify(body) : null
+            });
+            return await response.json();
+        }
+
+        async function initSystem() {
+            log("Initializing new Colab session...");
+            updateStatus("Creating Session...", "text-blue-400 loading-pulse");
+            
+            try {
+                const data = await apiRequest('/new', 'POST', { gpu: 't4' });
+                if(data.success) {
+                    sessionId = data.sessionId;
+                    document.getElementById('session-display').innerText = `ID: ${sessionId.substring(0,12)}\nGPU: T4`;
+                    document.getElementById('btn-bootstrap').disabled = false;
+                    log("Session Created: " + sessionId, "success");
+                    updateStatus("Session Active", "text-emerald-400");
+                } else {
+                    throw data.error;
+                }
+            } catch (e) {
+                log("Failed: " + e, "error");
+                updateStatus("Error", "text-red-500");
+            }
+        }
+
+        async function pollExecution(executionId) {
+            return new Promise((resolve, reject) => {
+                const interval = setInterval(async () => {
+                    try {
+                        const data = await apiRequest(`/exec-status?sessionId=${sessionId}&executionId=${executionId}`, 'GET');
+                        if (data.status === 'completed') {
+                            clearInterval(interval);
+                            resolve(data);
+                        } else if (data.status === 'failed') {
+                            clearInterval(interval);
+                            reject(data.error);
+                        } else {
+                            log("AI is thinking/processing...");
+                        }
+                    } catch (e) {
+                        clearInterval(interval);
+                        reject(e);
+                    }
+                }, POLL_INTERVAL);
+            });
+        }
+
+        async function bootstrapAI() {
+            const repo = document.getElementById('repo-url').value;
+            log(`Bootstrapping AI for ${repo}...`);
+            updateStatus("Cloning & Indexing...", "text-orange-400 loading-pulse");
+
+            // This script installs everything and prepares the RAG environment on the Colab instance
+            const setupCode = `
+import os
+import shutil
+from langchain_community.document_loaders import GitLoader
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import Chroma
+
+# 1. Silently install deps
+os.system("pip install -q langchain langchain-community langchain-huggingface chromadb GitPython sentence-transformers > /dev/null 2>&1")
+
+repo_url = "${repo}"
+repo_path = "./bot_repo"
+
+if os.path.exists(repo_path): shutil.rmtree(repo_path)
+if os.path.exists("./chroma_db"): shutil.rmtree("./chroma_db")
+
+# 2. Clone and Index
+loader = GitLoader(clone_url=repo_url, repo_path=repo_path, branch="main")
+docs = loader.load()
+splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
+splits = splitter.split_documents(docs)
+
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings, persist_directory="./chroma_db")
+
+print(f"DONE: Indexed {len(splits)} chunks from {repo_url}")
+            `;
+
+            try {
+                const start = await apiRequest('/exec', 'POST', { sessionId, code: setupCode, cellNo: 1, timeout: 600 });
+                const result = await pollExecution(start.executionId);
+                log(result.output, "success");
+                updateStatus("AI Ready", "text-emerald-400");
+                document.getElementById('user-query').disabled = false;
+                document.getElementById('btn-send').disabled = false;
+                document.getElementById('chat-box').innerHTML = '<div class="text-emerald-500 text-xs font-mono bg-emerald-500/10 p-3 rounded border border-emerald-500/20">AI has finished indexing the repo. Ask me anything!</div>';
+            } catch (e) {
+                log("Bootstrap failed: " + e, "error");
+                updateStatus("Ready (Limited)", "text-yellow-500");
+            }
+        }
+
+        async function askQuestion() {
+            const query = document.getElementById('user-query').value;
+            if(!query || isProcessing) return;
+
+            isProcessing = true;
+            appendMessage('user', query);
+            document.getElementById('user-query').value = "";
+            updateStatus("AI Typing...", "text-blue-400 loading-pulse");
+
+            // Python script to load the saved Chroma DB and answer using Qwen/Phi-3
+            // We use the "timeout: 7200" from your backend for safety
+            const queryCode = `
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline, BitsAndBytesConfig
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.vectorstores import Chroma
+
+# Settings
+MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"
+
+# 1. Load context
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+db = Chroma(persist_directory="./chroma_db", embedding_function=embeddings)
+docs = db.similarity_search("${query}", k=4)
+context = "\\n".join([d.page_content for d in docs])
+
+# 2. Load Model (only if not loaded, but since stateless in this bridge, we load here)
+bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.bfloat16)
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+model = AutoModelForCausalLM.from_pretrained(MODEL_ID, quantization_config=bnb_config, device_map="auto")
+pipe = pipeline("text-generation", model=model, tokenizer=tokenizer, max_new_tokens=512, do_sample=False)
+
+prompt = f"<|im_start|>system\\nUse context to answer.\\nContext:\\n{context}\\n<|im_end|>\\n<|im_start|>user\\n${query}<|im_end|>\\n<|im_start|>assistant\\n"
+res = pipe(prompt)
+print(res[0]['generated_text'].split("assistant\\n")[-1].strip())
+            `;
+
+            try {
+                const start = await apiRequest('/exec', 'POST', { sessionId, code: queryCode, cellNo: Date.now() % 1000, timeout: 300 });
+                const result = await pollExecution(start.executionId);
+                appendMessage('bot', result.output);
+            } catch (e) {
+                appendMessage('bot', "Sorry, I encountered an error: " + e);
+            } finally {
+                isProcessing = false;
+                updateStatus("AI Ready", "text-emerald-400");
+            }
+        }
+
+        function appendMessage(role, text) {
+            const chatBox = document.getElementById('chat-box');
+            if (chatBox.querySelector('.italic')) chatBox.innerHTML = '';
+            
+            const div = document.createElement('div');
+            div.className = `flex ${role === 'user' ? 'justify-end' : 'justify-start'}`;
+            div.innerHTML = `
+                <div class="max-w-[85%] rounded-2xl px-4 py-3 ${role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-800 border border-slate-700 shadow-xl'}">
+                    <p class="text-[9px] font-black uppercase mb-1 opacity-50">${role}</p>
+                    <div class="text-sm leading-relaxed whitespace-pre-wrap">${text}</div>
+                </div>`;
+            chatBox.appendChild(div);
+            chatBox.scrollTo({ top: chatBox.scrollHeight, behavior: 'smooth' });
+        }
+    </script>
 </body>
 </html>
