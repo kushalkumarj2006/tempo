@@ -313,13 +313,7 @@
             sessionId: null,
             ngrokUrl: null,
             pivotActive: false,
-            busy: false,
-            cells: {
-                deps: false,
-                model: false,
-                rag: false,
-                server: false
-            }
+            busy: false
         };
 
         // ----- Helpers -----
@@ -380,7 +374,7 @@
             return await resp.json();
         }
 
-        async function pollStatus(executionId, sessionId, timeoutMs=180000, intervalMs=3000) {
+        async function pollStatus(executionId, sessionId, timeoutMs=300000, intervalMs=3000) {
             const start = Date.now();
             while (Date.now() - start < timeoutMs) {
                 const url = `${bridgeInput.value.replace(/\/$/, '')}/exec-status?sessionId=${sessionId}&executionId=${executionId}`;
@@ -397,6 +391,75 @@
             }
             throw new Error('Execution timed out');
         }
+
+        // ----- Cell code blocks (NO leading indentation) -----
+        const CELLS = [
+            // Cell 0: Dependencies
+            `print("Step 1: Installing AI libraries (Silent)...")
+!pip install -q "requests==2.32.4" > /dev/null 2>&1
+!pip install -q langchain langchain-community langchain-huggingface chromadb flask flask-cors pyngrok GitPython transformers accelerate bitsandbytes sentence-transformers > /dev/null 2>&1
+print("✅ Installation Complete.")`,
+
+            // Cell 1: Model loading
+            `import os, torch, shutil, warnings
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from pyngrok import ngrok
+from langchain_community.document_loaders import GitLoader
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import Chroma
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline, BitsAndBytesConfig
+
+warnings.filterwarnings("ignore")
+
+NGROK_TOKEN = "3Fz4BAVaD6r5Rvug0FRQo4LNj9r_58Pb5TcRQephHFUyzN74r"
+REPO_URL = "https://github.com/kushalkumarj2006/repochat"
+MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"
+
+print("Step 2: Loading AI Model into GPU...")
+embed_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
+
+bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.bfloat16)
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+model = AutoModelForCausalLM.from_pretrained(MODEL_ID, quantization_config=bnb_config, device_map="auto")
+
+pipe = pipeline("text-generation", model=model, tokenizer=tokenizer, max_new_tokens=512, do_sample=False, use_cache=True, clean_up_tokenization_spaces=False)
+print("✅ Model loaded.")`,
+
+            // Cell 2: RAG indexing
+            `import os, shutil
+if os.path.exists("./repo_data"):
+    shutil.rmtree("./repo_data")
+print("📡 Indexing Repository: https://github.com/kushalkumarj2006/repochat")
+loader = GitLoader(clone_url="https://github.com/kushalkumarj2006/repochat", repo_path="./repo_data", branch="main")
+docs = splitter.split_documents(loader.load())
+vectorstore = Chroma.from_documents(docs, embed_model)
+print("✅ Repository Indexed.")`,
+
+            // Cell 3: Flask server + ngrok
+            `app = Flask(__name__)
+CORS(app)
+
+@app.route('/chat', methods=['POST'])
+def chat():
+    query = request.json.get("query")
+    results = vectorstore.as_retriever(search_kwargs={"k": 4}).invoke(query)
+    context = "\\n".join([f"File: {d.metadata.get('file_path')}\\n{d.page_content}" for d in results])
+    prompt = f"<|im_start|>system\\nYou are a coding assistant. Use this context:\\n{context}\\n<|im_end|>\\n<|im_start|>user\\n{query}<|im_end|>\\n<|im_start|>assistant\\n"
+    raw = pipe(prompt, max_length=None)
+    answer = raw[0]['generated_text'].split("<|im_start|>assistant\\n")[-1].replace("<|im_end|>", "").strip()
+    return jsonify({"answer": answer})
+
+ngrok.kill()
+ngrok.set_auth_token(NGROK_TOKEN)
+public_url = ngrok.connect(5000)
+print(f"\\n🚀 YOUR CHATBOT IS LIVE AT:")
+print(f"🔗 {public_url}")
+
+app.run(port=5000)`
+        ];
 
         // ----- Step 1: Provision -----
         async function provision() {
@@ -428,75 +491,22 @@
             log('📦 Deploying AI (4 steps)...', 'highlight');
             setStatus('deploying', 'busy');
 
-            const cells = [
-                { id: 'deps', code: `print("Step 1: Installing AI libraries (Silent)...")
-        !pip install -q "requests==2.32.4" > /dev/null 2>&1
-        !pip install -q langchain langchain-community langchain-huggingface chromadb flask flask-cors pyngrok GitPython transformers accelerate bitsandbytes sentence-transformers > /dev/null 2>&1
-        print("✅ Installation Complete.")` },
-                { id: 'model', code: `import os, torch, shutil, warnings
-        from flask import Flask, request, jsonify
-        from flask_cors import CORS
-        from pyngrok import ngrok
-        from langchain_community.document_loaders import GitLoader
-        from langchain_huggingface import HuggingFaceEmbeddings
-        from langchain_text_splitters import RecursiveCharacterTextSplitter
-        from langchain_community.vectorstores import Chroma
-        from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline, BitsAndBytesConfig
-        warnings.filterwarnings("ignore")
-        NGROK_TOKEN = "3Fz4BAVaD6r5Rvug0FRQo4LNj9r_58Pb5TcRQephHFUyzN74r"
-        REPO_URL = "https://github.com/kushalkumarj2006/repochat"
-        MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"
-        print("Step 2: Loading AI Model into GPU...")
-        embed_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-        splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
-        bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.bfloat16)
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-        model = AutoModelForCausalLM.from_pretrained(MODEL_ID, quantization_config=bnb_config, device_map="auto")
-        pipe = pipeline("text-generation", model=model, tokenizer=tokenizer, max_new_tokens=512, do_sample=False, use_cache=True, clean_up_tokenization_spaces=False)
-        print("✅ Model loaded.")` },
-                { id: 'rag', code: `import os, shutil
-        if os.path.exists("./repo_data"): shutil.rmtree("./repo_data")
-        print("📡 Indexing Repository: https://github.com/kushalkumarj2006/repochat")
-        loader = GitLoader(clone_url="https://github.com/kushalkumarj2006/repochat", repo_path="./repo_data", branch="main")
-        docs = splitter.split_documents(loader.load())
-        vectorstore = Chroma.from_documents(docs, embed_model)
-        print("✅ Repository Indexed.")` },
-                { id: 'server', code: `app = Flask(__name__)
-        CORS(app)
-        @app.route('/chat', methods=['POST'])
-        def chat():
-            query = request.json.get("query")
-            results = vectorstore.as_retriever(search_kwargs={"k": 4}).invoke(query)
-            context = "\\n".join([f"File: {d.metadata.get('file_path')}\\n{d.page_content}" for d in results])
-            prompt = f"<|im_start|>system\\nYou are a coding assistant. Use this context:\\n{context}\\n<|im_end|>\\n<|im_start|>user\\n{query}<|im_end|>\\n<|im_start|>assistant\\n"
-            raw = pipe(prompt, max_length=None)
-            answer = raw[0]['generated_text'].split("<|im_start|>assistant\\n")[-1].replace("<|im_end|>", "").strip()
-            return jsonify({"answer": answer})
-        ngrok.kill()
-        ngrok.set_auth_token(NGROK_TOKEN)
-        public_url = ngrok.connect(5000)
-        print(f"\\n🚀 YOUR CHATBOT IS LIVE AT:")
-        print(f"🔗 {public_url}")
-        app.run(port=5000)` }
-            ];
-
             let allOk = true;
-            for (let i = 0; i < cells.length; i++) {
-                const cell = cells[i];
-                log(`▶️ Running cell ${i+1}/4: ${cell.id}`, 'highlight');
+            for (let i = 0; i < CELLS.length; i++) {
+                log(`▶️ Running cell ${i+1}/4`, 'highlight');
                 try {
                     const resp = await apiCall('/exec', {
                         sessionId: state.sessionId,
                         cellNo: i,
-                        code: cell.code,
+                        code: CELLS[i],
                         timeout: 600
                     });
                     log(`   Execution ID: ${resp.executionId.substring(0,12)}`, 'info');
                     const result = await pollStatus(resp.executionId, state.sessionId, 420000, 4000);
                     if (result.status === 'completed') {
                         log(`   ✅ Cell ${i+1} completed.`, 'ok');
-                        // Try to capture ngrok URL from output
-                        if (cell.id === 'server') {
+                        // Capture ngrok URL from cell 3 output
+                        if (i === 3) {
                             const output = result.output || '';
                             const match = output.match(/https:\/\/[a-z0-9-]+\.ngrok-free\.app/);
                             if (match) {
@@ -505,11 +515,12 @@
                                 updateUi();
                                 btnPivot.disabled = false;
                             } else {
-                                log('   ⚠️ No ngrok URL found in output. Check logs.', 'err');
+                                log('   ⚠️ No ngrok URL found in output.', 'err');
                             }
                         }
                     } else {
-                        log(`   ❌ Cell ${i+1} failed: ${result.error || 'unknown error'}`, 'err');
+                        const errMsg = result.error || 'unknown error';
+                        log(`   ❌ Cell ${i+1} failed: ${errMsg.substring(0,200)}`, 'err');
                         allOk = false;
                         break;
                     }
@@ -520,15 +531,13 @@
                 }
             }
 
-            if (allOk) {
-                log('✅ Deployment complete!', 'ok');
+            if (allOk && state.ngrokUrl) {
+                log('✅ Deployment complete! Pivot ready.', 'ok');
                 setStatus('ready', 'ready');
-                if (state.ngrokUrl) {
-                    btnPivot.disabled = false;
-                    log('🔗 Pivot ready. Click "Pivot" to switch to direct chat.', 'highlight');
-                } else {
-                    log('⚠️ Deployment finished but no ngrok URL captured.', 'err');
-                }
+                btnPivot.disabled = false;
+            } else if (allOk && !state.ngrokUrl) {
+                log('⚠️ Deployment finished but no ngrok URL captured.', 'err');
+                setStatus('error', 'error');
             } else {
                 setStatus('error', 'error');
             }
@@ -590,8 +599,7 @@
                 sessionId: null,
                 ngrokUrl: null,
                 pivotActive: false,
-                busy: false,
-                cells: { deps: false, model: false, rag: false, server: false }
+                busy: false
             };
             logBox.innerHTML = '🔄 Reset. Ready for fresh start.';
             chatMessages.innerHTML = '<span class="text-muted">💡 Deploy the AI first, then pivot to start chatting.</span>';
