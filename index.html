@@ -1,267 +1,625 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ColabBridge Chatbot</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Colab RAG Orchestrator</title>
     <style>
-        .chat-height { height: calc(100vh - 380px); }
-        .log-height { height: 120px; }
-        .hide-scroll::-webkit-scrollbar { width: 0px; }
-        @keyframes pulse-blue { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        .loading-pulse { animation: pulse-blue 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+            background: #f6f8fc;
+            color: #0d0d0d;
+            padding: 2rem 1rem;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 960px;
+            width: 100%;
+            background: #ffffff;
+            border-radius: 20px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.06);
+            padding: 2rem 2rem 2.5rem;
+            border: 1px solid #e9edf2;
+        }
+        h1 {
+            font-weight: 600;
+            font-size: 1.9rem;
+            letter-spacing: -0.01em;
+            margin-bottom: 0.3rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .sub {
+            color: #5a6a7c;
+            font-size: 0.95rem;
+            margin-bottom: 1.75rem;
+            border-bottom: 1px solid #e9edf2;
+            padding-bottom: 1rem;
+        }
+        .config-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem 1.5rem;
+            background: #f8faff;
+            padding: 1.25rem 1.5rem;
+            border-radius: 16px;
+            border: 1px solid #e5eaf0;
+            margin-bottom: 1.75rem;
+        }
+        .config-grid label {
+            font-weight: 500;
+            font-size: 0.85rem;
+            color: #1a2a3a;
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+        }
+        .config-grid input {
+            padding: 0.55rem 0.75rem;
+            border: 1px solid #d5dbe3;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            background: white;
+            transition: 0.15s;
+        }
+        .config-grid input:focus {
+            border-color: #4d6bfe;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(77,107,254,0.12);
+        }
+        .step-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.65rem;
+            margin: 1.5rem 0 1rem;
+        }
+        .step-btn {
+            background: white;
+            border: 1px solid #d5dbe3;
+            border-radius: 30px;
+            padding: 0.45rem 1.2rem;
+            font-weight: 500;
+            font-size: 0.82rem;
+            color: #1e2a3a;
+            cursor: pointer;
+            transition: 0.15s;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .step-btn:hover:not(:disabled) {
+            border-color: #4d6bfe;
+            color: #4d6bfe;
+            background: #f0f4ff;
+        }
+        .step-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+        .step-btn.active {
+            background: #4d6bfe;
+            border-color: #4d6bfe;
+            color: white;
+        }
+        .log-box {
+            background: #0b121c;
+            color: #d4e2f0;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 0.78rem;
+            padding: 1rem 1.25rem;
+            border-radius: 14px;
+            min-height: 180px;
+            max-height: 340px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.6;
+            margin: 0.75rem 0 1.25rem;
+            border: 1px solid #1e2a3a;
+        }
+        .log-box .highlight {
+            color: #a5d6ff;
+        }
+        .log-box .err {
+            color: #ff8a80;
+        }
+        .log-box .ok {
+            color: #8bdb9d;
+        }
+        .chat-area {
+            margin-top: 1.75rem;
+            border-top: 1px solid #e9edf2;
+            padding-top: 1.75rem;
+        }
+        .chat-area h3 {
+            font-weight: 500;
+            font-size: 1.1rem;
+            margin-bottom: 0.75rem;
+        }
+        .chat-interface {
+            display: flex;
+            gap: 0.8rem;
+            flex-wrap: wrap;
+        }
+        .chat-interface input {
+            flex: 1 1 260px;
+            padding: 0.65rem 1rem;
+            border: 1px solid #d5dbe3;
+            border-radius: 30px;
+            font-size: 0.95rem;
+            background: white;
+            transition: 0.15s;
+        }
+        .chat-interface input:focus {
+            border-color: #4d6bfe;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(77,107,254,0.10);
+        }
+        .chat-interface button {
+            background: #4d6bfe;
+            border: none;
+            color: white;
+            font-weight: 500;
+            padding: 0.65rem 1.6rem;
+            border-radius: 30px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: 0.15s;
+            white-space: nowrap;
+        }
+        .chat-interface button:hover:not(:disabled) {
+            background: #3a56d4;
+            transform: scale(0.98);
+        }
+        .chat-interface button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .chat-messages {
+            background: #fafcff;
+            border-radius: 16px;
+            padding: 1rem 1.25rem;
+            margin-top: 1rem;
+            min-height: 80px;
+            max-height: 260px;
+            overflow-y: auto;
+            border: 1px solid #e5eaf0;
+            font-size: 0.92rem;
+            line-height: 1.6;
+        }
+        .chat-messages .q {
+            font-weight: 500;
+            color: #1a2a3a;
+        }
+        .chat-messages .a {
+            color: #1a3a5a;
+            margin-bottom: 0.6rem;
+        }
+        .chat-messages .a .source {
+            font-size: 0.7rem;
+            color: #5a7a9a;
+            display: block;
+            margin-top: 0.2rem;
+        }
+        .status-badge {
+            display: inline-block;
+            font-size: 0.7rem;
+            font-weight: 500;
+            padding: 0.15rem 0.7rem;
+            border-radius: 40px;
+            background: #e5eaf0;
+            color: #1a2a3a;
+            margin-left: 0.5rem;
+        }
+        .status-badge.ready {
+            background: #d4edda;
+            color: #0a4a2a;
+        }
+        .status-badge.busy {
+            background: #fff3cd;
+            color: #6a4a00;
+        }
+        .status-badge.error {
+            background: #f8d7da;
+            color: #7a2a2a;
+        }
+        .flex {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+        .mt-2 { margin-top: 0.5rem; }
+        .text-muted { color: #6a7a8a; font-size: 0.85rem; }
+        @media (max-width: 640px) {
+            .container { padding: 1.25rem; }
+            .config-grid { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
-<body class="bg-slate-950 text-slate-200 font-sans">
+<body>
+<div class="container" id="app">
+    <h1>⚡ Colab RAG Orchestrator</h1>
+    <div class="sub">Bridge → Pivot → Direct Chat</div>
 
-    <div class="max-w-5xl mx-auto p-4 md:p-8">
-        <!-- HEADER -->
-        <div class="flex flex-wrap items-center justify-between gap-4 mb-6 pb-6 border-b border-slate-800">
-            <div>
-                <h1 class="text-2xl font-black bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">COLAB BRIDGE AI</h1>
-                <p id="status-text" class="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold">Status: Offline</p>
-            </div>
-            
-            <div class="flex flex-wrap gap-2">
-                <input id="api-url" type="text" placeholder="Backend URL (Render)" class="bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-xs w-48 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                <input id="api-secret" type="password" placeholder="API Secret" class="bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-xs w-32 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                <button id="btn-connect" onclick="initSystem()" class="bg-blue-600 hover:bg-blue-500 px-4 py-1.5 rounded text-xs font-bold transition">INITIALIZE</button>
-            </div>
-        </div>
-
-        <!-- SETUP PANEL -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div class="md:col-span-2 bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
-                <label class="block text-[10px] uppercase text-slate-500 font-black mb-2">Target GitHub Repository</label>
-                <div class="flex gap-2">
-                    <input id="repo-url" type="text" value="https://github.com/kushalkumarj2006/repochat" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-2 text-sm focus:outline-none">
-                    <button id="btn-bootstrap" onclick="bootstrapAI()" disabled class="bg-emerald-600 disabled:bg-slate-700 disabled:cursor-not-allowed hover:bg-emerald-500 px-6 py-2 rounded-lg text-sm font-bold transition whitespace-nowrap">CLONE & INDEX</button>
-                </div>
-            </div>
-            <div class="bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
-                <label class="block text-[10px] uppercase text-slate-500 font-black mb-2">Session Info</label>
-                <div id="session-display" class="text-xs font-mono text-blue-400">No active session</div>
-            </div>
-        </div>
-
-        <!-- CHAT AREA -->
-        <div id="chat-box" class="chat-height overflow-y-auto bg-slate-900/30 rounded-xl p-6 border border-slate-800 mb-6 flex flex-col gap-4 hide-scroll">
-            <div class="text-center my-auto opacity-20 italic">Initialise the backend to start the AI session...</div>
-        </div>
-
-        <!-- INPUT -->
-        <div class="relative max-w-4xl mx-auto">
-            <input id="user-query" type="text" disabled placeholder="Type your question about the repo..." 
-                class="w-full bg-slate-800 border border-slate-700 rounded-full px-6 py-4 pr-16 focus:outline-none focus:border-blue-500 disabled:opacity-50"
-                onkeypress="if(event.key==='Enter') askQuestion()">
-            <button id="btn-send" onclick="askQuestion()" disabled class="absolute right-3 top-3 bg-blue-600 p-2 rounded-full hover:bg-blue-500 transition disabled:bg-slate-700">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l7 7m-7-7H3" /></svg>
-            </button>
-        </div>
-
-        <!-- LOGS -->
-        <div class="mt-8">
-            <p class="text-[10px] font-black uppercase text-slate-600 mb-2">System Console Logs</p>
-            <div id="logs" class="log-height bg-black/40 rounded-lg p-3 font-mono text-[10px] text-slate-400 overflow-y-auto border border-slate-900">
-                > System ready. Waiting for initialization...
-            </div>
-        </div>
+    <!-- CONFIG -->
+    <div class="config-grid">
+        <label>Bridge URL (Render)
+            <input id="bridgeUrl" value="https://colabbridge-jyba.onrender.com" placeholder="https://your-bridge.onrender.com" />
+        </label>
+        <label>API Secret
+            <input id="apiSecret" type="password" placeholder="your-api-secret" />
+        </label>
     </div>
 
-    <script>
-        let sessionId = null;
-        let isProcessing = false;
-        const POLL_INTERVAL = 3000;
+    <!-- STEP BUTTONS -->
+    <div class="step-group">
+        <button class="step-btn" id="btnProvision">🚀 1. Provision</button>
+        <button class="step-btn" id="btnDeploy" disabled>📦 2. Deploy AI</button>
+        <button class="step-btn" id="btnPivot" disabled>🔗 3. Pivot</button>
+        <button class="step-btn" id="btnReset" style="border-color:#f0d0d0; color:#7a3a3a;">↻ Reset</button>
+        <span id="statusBadge" class="status-badge">idle</span>
+    </div>
 
-        function log(msg, type = 'info') {
-            const logs = document.getElementById('logs');
-            const color = type === 'error' ? 'text-red-500' : type === 'success' ? 'text-emerald-400' : 'text-slate-400';
-            logs.innerHTML += `<div class="${color}">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
-            logs.scrollTop = logs.scrollHeight;
-        }
+    <!-- LOGS -->
+    <div class="log-box" id="logBox">🟢 Ready. Enter your Bridge URL and API Secret, then click <span class="highlight">Provision</span>.</div>
 
-        function updateStatus(text, colorClass) {
-            const el = document.getElementById('status-text');
-            el.innerText = `Status: ${text}`;
-            el.className = `text-[10px] uppercase tracking-[0.2em] font-bold ${colorClass}`;
-        }
+    <!-- CHAT -->
+    <div class="chat-area" id="chatSection">
+        <div class="flex">
+            <h3>💬 Direct Chat <span class="text-muted" id="pivotStatus">(pivot not active)</span></h3>
+            <span style="font-size:0.75rem; background:#eef3f9; padding:0.1rem 0.7rem; border-radius:30px;" id="ngrokDisplay">⛔ no tunnel</span>
+        </div>
+        <div class="chat-interface">
+            <input id="chatInput" placeholder="Ask about the repo..." disabled />
+            <button id="chatSend" disabled>Send</button>
+        </div>
+        <div class="chat-messages" id="chatMessages">
+            <span class="text-muted">💡 Deploy the AI first, then pivot to start chatting.</span>
+        </div>
+    </div>
+</div>
 
-        async function apiRequest(endpoint, method = 'POST', body = {}) {
-            const url = document.getElementById('api-url').value.replace(/\/$/, '');
-            const secret = document.getElementById('api-secret').value;
-            
-            if(!url || !secret) {
-                alert("Please enter Backend URL and API Secret");
-                throw "Missing Config";
+<script>
+    (function(){
+        "use strict";
+
+        // ----- DOM refs -----
+        const bridgeInput = document.getElementById('bridgeUrl');
+        const secretInput = document.getElementById('apiSecret');
+        const logBox = document.getElementById('logBox');
+        const statusBadge = document.getElementById('statusBadge');
+        const pivotStatus = document.getElementById('pivotStatus');
+        const ngrokDisplay = document.getElementById('ngrokDisplay');
+        const chatInput = document.getElementById('chatInput');
+        const chatSend = document.getElementById('chatSend');
+        const chatMessages = document.getElementById('chatMessages');
+
+        const btnProvision = document.getElementById('btnProvision');
+        const btnDeploy = document.getElementById('btnDeploy');
+        const btnPivot = document.getElementById('btnPivot');
+        const btnReset = document.getElementById('btnReset');
+
+        // ----- State -----
+        let state = {
+            sessionId: null,
+            ngrokUrl: null,
+            pivotActive: false,
+            busy: false,
+            cells: {
+                deps: false,
+                model: false,
+                rag: false,
+                server: false
             }
+        };
 
-            const response = await fetch(`${url}${endpoint}`, {
+        // ----- Helpers -----
+        function log(msg, type='info') {
+            const time = new Date().toLocaleTimeString();
+            const prefix = type === 'err' ? '❌' : type === 'ok' ? '✅' : type === 'highlight' ? '🔹' : '▪️';
+            const cls = type === 'err' ? 'err' : type === 'ok' ? 'ok' : type === 'highlight' ? 'highlight' : '';
+            logBox.innerHTML += `<span class="${cls}">[${time}] ${prefix} ${msg}</span>\n`;
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        function setStatus(text, cls='') {
+            statusBadge.textContent = text;
+            statusBadge.className = 'status-badge' + (cls ? ' ' + cls : '');
+        }
+
+        function setBusy(busy) {
+            state.busy = busy;
+            btnProvision.disabled = busy;
+            btnDeploy.disabled = busy || !state.sessionId;
+            btnPivot.disabled = busy || !state.ngrokUrl;
+            chatInput.disabled = !state.pivotActive || busy;
+            chatSend.disabled = !state.pivotActive || busy;
+        }
+
+        function updateUi() {
+            const hasSession = !!state.sessionId;
+            const hasNgrok = !!state.ngrokUrl;
+            btnDeploy.disabled = state.busy || !hasSession;
+            btnPivot.disabled = state.busy || !hasNgrok;
+            chatInput.disabled = !state.pivotActive || state.busy;
+            chatSend.disabled = !state.pivotActive || state.busy;
+            ngrokDisplay.textContent = hasNgrok ? `🔗 ${state.ngrokUrl}` : '⛔ no tunnel';
+            pivotStatus.textContent = state.pivotActive ? '✅ active' : '(pivot not active)';
+            if (state.pivotActive) {
+                chatMessages.innerHTML = chatMessages.innerHTML || '<span class="text-muted">💬 Pivot active. Ask a question!</span>';
+            }
+        }
+
+        // ----- API calls -----
+        async function apiCall(endpoint, body, method='POST') {
+            const base = bridgeInput.value.replace(/\/$/, '');
+            const url = `${base}${endpoint}`;
+            const headers = {
+                'Content-Type': 'application/json',
+                'api-secret': secretInput.value
+            };
+            const opts = {
                 method,
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'api-secret': secret
-                },
-                body: method === 'POST' ? JSON.stringify(body) : null
-            });
-            return await response.json();
+                headers,
+                body: JSON.stringify(body)
+            };
+            const resp = await fetch(url, opts);
+            if (!resp.ok) {
+                const errText = await resp.text();
+                throw new Error(`HTTP ${resp.status}: ${errText}`);
+            }
+            return await resp.json();
         }
 
-        async function initSystem() {
-            log("Initializing new Colab session...");
-            updateStatus("Creating Session...", "text-blue-400 loading-pulse");
-            
-            try {
-                const data = await apiRequest('/new', 'POST', { gpu: 't4' });
-                if(data.success) {
-                    sessionId = data.sessionId;
-                    document.getElementById('session-display').innerText = `ID: ${sessionId.substring(0,12)}\nGPU: T4`;
-                    document.getElementById('btn-bootstrap').disabled = false;
-                    log("Session Created: " + sessionId, "success");
-                    updateStatus("Session Active", "text-emerald-400");
-                } else {
-                    throw data.error;
+        async function pollStatus(executionId, sessionId, timeoutMs=180000, intervalMs=3000) {
+            const start = Date.now();
+            while (Date.now() - start < timeoutMs) {
+                const url = `${bridgeInput.value.replace(/\/$/, '')}/exec-status?sessionId=${sessionId}&executionId=${executionId}`;
+                const resp = await fetch(url);
+                if (!resp.ok) {
+                    await new Promise(r => setTimeout(r, intervalMs));
+                    continue;
                 }
-            } catch (e) {
-                log("Failed: " + e, "error");
-                updateStatus("Error", "text-red-500");
+                const data = await resp.json();
+                if (data.status === 'completed' || data.status === 'failed') {
+                    return data;
+                }
+                await new Promise(r => setTimeout(r, intervalMs));
             }
+            throw new Error('Execution timed out');
         }
 
-        async function pollExecution(executionId) {
-            return new Promise((resolve, reject) => {
-                const interval = setInterval(async () => {
-                    try {
-                        const data = await apiRequest(`/exec-status?sessionId=${sessionId}&executionId=${executionId}`, 'GET');
-                        if (data.status === 'completed') {
-                            clearInterval(interval);
-                            resolve(data);
-                        } else if (data.status === 'failed') {
-                            clearInterval(interval);
-                            reject(data.error);
-                        } else {
-                            log("AI is thinking/processing...");
+        // ----- Step 1: Provision -----
+        async function provision() {
+            if (state.busy) return;
+            setBusy(true);
+            log('🔄 Provisioning new Colab session...', 'highlight');
+            setStatus('provisioning', 'busy');
+            try {
+                const resp = await apiCall('/new', { gpu: 'T4' });
+                state.sessionId = resp.sessionId;
+                log(`✅ Session created: ${resp.sessionId.substring(0,12)}`, 'ok');
+                log(`   GPU: ${resp.gpu || 'CPU'}`, 'info');
+                setStatus('ready', 'ready');
+                updateUi();
+                btnDeploy.disabled = false;
+            } catch (e) {
+                log(`❌ Provision failed: ${e.message}`, 'err');
+                setStatus('error', 'error');
+                state.sessionId = null;
+            }
+            setBusy(false);
+            updateUi();
+        }
+
+        // ----- Step 2: Deploy (4 cells) -----
+        async function deployAi() {
+            if (state.busy || !state.sessionId) return;
+            setBusy(true);
+            log('📦 Deploying AI (4 steps)...', 'highlight');
+            setStatus('deploying', 'busy');
+
+            const cells = [
+                { id: 'deps', code: `print("Step 1: Installing AI libraries (Silent)...")
+        !pip install -q "requests==2.32.4" > /dev/null 2>&1
+        !pip install -q langchain langchain-community langchain-huggingface chromadb flask flask-cors pyngrok GitPython transformers accelerate bitsandbytes sentence-transformers > /dev/null 2>&1
+        print("✅ Installation Complete.")` },
+                { id: 'model', code: `import os, torch, shutil, warnings
+        from flask import Flask, request, jsonify
+        from flask_cors import CORS
+        from pyngrok import ngrok
+        from langchain_community.document_loaders import GitLoader
+        from langchain_huggingface import HuggingFaceEmbeddings
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+        from langchain_community.vectorstores import Chroma
+        from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline, BitsAndBytesConfig
+        warnings.filterwarnings("ignore")
+        NGROK_TOKEN = "3Fz4BAVaD6r5Rvug0FRQo4LNj9r_58Pb5TcRQephHFUyzN74r"
+        REPO_URL = "https://github.com/kushalkumarj2006/repochat"
+        MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"
+        print("Step 2: Loading AI Model into GPU...")
+        embed_model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
+        bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.bfloat16)
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+        model = AutoModelForCausalLM.from_pretrained(MODEL_ID, quantization_config=bnb_config, device_map="auto")
+        pipe = pipeline("text-generation", model=model, tokenizer=tokenizer, max_new_tokens=512, do_sample=False, use_cache=True, clean_up_tokenization_spaces=False)
+        print("✅ Model loaded.")` },
+                { id: 'rag', code: `import os, shutil
+        if os.path.exists("./repo_data"): shutil.rmtree("./repo_data")
+        print("📡 Indexing Repository: https://github.com/kushalkumarj2006/repochat")
+        loader = GitLoader(clone_url="https://github.com/kushalkumarj2006/repochat", repo_path="./repo_data", branch="main")
+        docs = splitter.split_documents(loader.load())
+        vectorstore = Chroma.from_documents(docs, embed_model)
+        print("✅ Repository Indexed.")` },
+                { id: 'server', code: `app = Flask(__name__)
+        CORS(app)
+        @app.route('/chat', methods=['POST'])
+        def chat():
+            query = request.json.get("query")
+            results = vectorstore.as_retriever(search_kwargs={"k": 4}).invoke(query)
+            context = "\\n".join([f"File: {d.metadata.get('file_path')}\\n{d.page_content}" for d in results])
+            prompt = f"<|im_start|>system\\nYou are a coding assistant. Use this context:\\n{context}\\n<|im_end|>\\n<|im_start|>user\\n{query}<|im_end|>\\n<|im_start|>assistant\\n"
+            raw = pipe(prompt, max_length=None)
+            answer = raw[0]['generated_text'].split("<|im_start|>assistant\\n")[-1].replace("<|im_end|>", "").strip()
+            return jsonify({"answer": answer})
+        ngrok.kill()
+        ngrok.set_auth_token(NGROK_TOKEN)
+        public_url = ngrok.connect(5000)
+        print(f"\\n🚀 YOUR CHATBOT IS LIVE AT:")
+        print(f"🔗 {public_url}")
+        app.run(port=5000)` }
+            ];
+
+            let allOk = true;
+            for (let i = 0; i < cells.length; i++) {
+                const cell = cells[i];
+                log(`▶️ Running cell ${i+1}/4: ${cell.id}`, 'highlight');
+                try {
+                    const resp = await apiCall('/exec', {
+                        sessionId: state.sessionId,
+                        cellNo: i,
+                        code: cell.code,
+                        timeout: 600
+                    });
+                    log(`   Execution ID: ${resp.executionId.substring(0,12)}`, 'info');
+                    const result = await pollStatus(resp.executionId, state.sessionId, 420000, 4000);
+                    if (result.status === 'completed') {
+                        log(`   ✅ Cell ${i+1} completed.`, 'ok');
+                        // Try to capture ngrok URL from output
+                        if (cell.id === 'server') {
+                            const output = result.output || '';
+                            const match = output.match(/https:\/\/[a-z0-9-]+\.ngrok-free\.app/);
+                            if (match) {
+                                state.ngrokUrl = match[0];
+                                log(`🔗 Captured ngrok URL: ${state.ngrokUrl}`, 'highlight');
+                                updateUi();
+                                btnPivot.disabled = false;
+                            } else {
+                                log('   ⚠️ No ngrok URL found in output. Check logs.', 'err');
+                            }
                         }
-                    } catch (e) {
-                        clearInterval(interval);
-                        reject(e);
+                    } else {
+                        log(`   ❌ Cell ${i+1} failed: ${result.error || 'unknown error'}`, 'err');
+                        allOk = false;
+                        break;
                     }
-                }, POLL_INTERVAL);
-            });
+                } catch (e) {
+                    log(`   ❌ Cell ${i+1} error: ${e.message}`, 'err');
+                    allOk = false;
+                    break;
+                }
+            }
+
+            if (allOk) {
+                log('✅ Deployment complete!', 'ok');
+                setStatus('ready', 'ready');
+                if (state.ngrokUrl) {
+                    btnPivot.disabled = false;
+                    log('🔗 Pivot ready. Click "Pivot" to switch to direct chat.', 'highlight');
+                } else {
+                    log('⚠️ Deployment finished but no ngrok URL captured.', 'err');
+                }
+            } else {
+                setStatus('error', 'error');
+            }
+            setBusy(false);
+            updateUi();
         }
 
-        async function bootstrapAI() {
-            const repo = document.getElementById('repo-url').value;
-            log(`Bootstrapping AI for ${repo}...`);
-            updateStatus("Cloning & Indexing...", "text-orange-400 loading-pulse");
+        // ----- Step 3: Pivot -----
+        function pivot() {
+            if (!state.ngrokUrl) {
+                log('❌ No ngrok URL to pivot to. Deploy first.', 'err');
+                return;
+            }
+            state.pivotActive = true;
+            log(`🔀 Pivoted to direct endpoint: ${state.ngrokUrl}`, 'highlight');
+            setStatus('pivoted', 'ready');
+            chatInput.disabled = false;
+            chatSend.disabled = false;
+            chatMessages.innerHTML = '';
+            chatMessages.innerHTML = '<span class="text-muted">💬 Pivot active. Ask a question about the repo!</span>';
+            updateUi();
+            log('✅ Direct chat ready!', 'ok');
+        }
 
-            // This script installs everything and prepares the RAG environment on the Colab instance
-            const setupCode = `
-import os
-import shutil
-from langchain_community.document_loaders import GitLoader
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Chroma
-
-# 1. Silently install deps
-os.system("pip install -q langchain langchain-community langchain-huggingface chromadb GitPython sentence-transformers > /dev/null 2>&1")
-
-repo_url = "${repo}"
-repo_path = "./bot_repo"
-
-if os.path.exists(repo_path): shutil.rmtree(repo_path)
-if os.path.exists("./chroma_db"): shutil.rmtree("./chroma_db")
-
-# 2. Clone and Index
-loader = GitLoader(clone_url=repo_url, repo_path=repo_path, branch="main")
-docs = loader.load()
-splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
-splits = splitter.split_documents(docs)
-
-embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings, persist_directory="./chroma_db")
-
-print(f"DONE: Indexed {len(splits)} chunks from {repo_url}")
-            `;
+        // ----- Chat via direct ngrok -----
+        async function sendChat() {
+            const query = chatInput.value.trim();
+            if (!query || !state.ngrokUrl || !state.pivotActive) return;
+            chatInput.value = '';
+            chatInput.disabled = true;
+            chatSend.disabled = true;
+            chatMessages.innerHTML += `<div class="q">🧑 <strong>You:</strong> ${query}</div>`;
+            chatMessages.scrollTop = chatMessages.scrollHeight;
 
             try {
-                const start = await apiRequest('/exec', 'POST', { sessionId, code: setupCode, cellNo: 1, timeout: 600 });
-                const result = await pollExecution(start.executionId);
-                log(result.output, "success");
-                updateStatus("AI Ready", "text-emerald-400");
-                document.getElementById('user-query').disabled = false;
-                document.getElementById('btn-send').disabled = false;
-                document.getElementById('chat-box').innerHTML = '<div class="text-emerald-500 text-xs font-mono bg-emerald-500/10 p-3 rounded border border-emerald-500/20">AI has finished indexing the repo. Ask me anything!</div>';
+                const url = `${state.ngrokUrl}/chat`;
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query })
+                });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                const answer = data.answer || '⚠️ No answer returned.';
+                chatMessages.innerHTML += `<div class="a">🤖 <strong>Assistant:</strong> ${answer}</div>`;
             } catch (e) {
-                log("Bootstrap failed: " + e, "error");
-                updateStatus("Ready (Limited)", "text-yellow-500");
+                chatMessages.innerHTML += `<div class="err">❌ Chat error: ${e.message}</div>`;
+                log(`Chat error: ${e.message}`, 'err');
             }
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            chatInput.disabled = false;
+            chatSend.disabled = false;
+            chatInput.focus();
         }
 
-        async function askQuestion() {
-            const query = document.getElementById('user-query').value;
-            if(!query || isProcessing) return;
-
-            isProcessing = true;
-            appendMessage('user', query);
-            document.getElementById('user-query').value = "";
-            updateStatus("AI Typing...", "text-blue-400 loading-pulse");
-
-            // Python script to load the saved Chroma DB and answer using Qwen/Phi-3
-            // We use the "timeout: 7200" from your backend for safety
-            const queryCode = `
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline, BitsAndBytesConfig
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
-
-# Settings
-MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"
-
-# 1. Load context
-embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-db = Chroma(persist_directory="./chroma_db", embedding_function=embeddings)
-docs = db.similarity_search("${query}", k=4)
-context = "\\n".join([d.page_content for d in docs])
-
-# 2. Load Model (only if not loaded, but since stateless in this bridge, we load here)
-bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.bfloat16)
-tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-model = AutoModelForCausalLM.from_pretrained(MODEL_ID, quantization_config=bnb_config, device_map="auto")
-pipe = pipeline("text-generation", model=model, tokenizer=tokenizer, max_new_tokens=512, do_sample=False)
-
-prompt = f"<|im_start|>system\\nUse context to answer.\\nContext:\\n{context}\\n<|im_end|>\\n<|im_start|>user\\n${query}<|im_end|>\\n<|im_start|>assistant\\n"
-res = pipe(prompt)
-print(res[0]['generated_text'].split("assistant\\n")[-1].strip())
-            `;
-
-            try {
-                const start = await apiRequest('/exec', 'POST', { sessionId, code: queryCode, cellNo: Date.now() % 1000, timeout: 300 });
-                const result = await pollExecution(start.executionId);
-                appendMessage('bot', result.output);
-            } catch (e) {
-                appendMessage('bot', "Sorry, I encountered an error: " + e);
-            } finally {
-                isProcessing = false;
-                updateStatus("AI Ready", "text-emerald-400");
-            }
+        // ----- Reset -----
+        function resetAll() {
+            state = {
+                sessionId: null,
+                ngrokUrl: null,
+                pivotActive: false,
+                busy: false,
+                cells: { deps: false, model: false, rag: false, server: false }
+            };
+            logBox.innerHTML = '🔄 Reset. Ready for fresh start.';
+            chatMessages.innerHTML = '<span class="text-muted">💡 Deploy the AI first, then pivot to start chatting.</span>';
+            setStatus('idle', '');
+            updateUi();
+            btnDeploy.disabled = true;
+            btnPivot.disabled = true;
+            chatInput.disabled = true;
+            chatSend.disabled = true;
+            ngrokDisplay.textContent = '⛔ no tunnel';
+            pivotStatus.textContent = '(pivot not active)';
+            log('🔄 Reset complete.', 'highlight');
         }
 
-        function appendMessage(role, text) {
-            const chatBox = document.getElementById('chat-box');
-            if (chatBox.querySelector('.italic')) chatBox.innerHTML = '';
-            
-            const div = document.createElement('div');
-            div.className = `flex ${role === 'user' ? 'justify-end' : 'justify-start'}`;
-            div.innerHTML = `
-                <div class="max-w-[85%] rounded-2xl px-4 py-3 ${role === 'user' ? 'bg-blue-600 text-white' : 'bg-slate-800 border border-slate-700 shadow-xl'}">
-                    <p class="text-[9px] font-black uppercase mb-1 opacity-50">${role}</p>
-                    <div class="text-sm leading-relaxed whitespace-pre-wrap">${text}</div>
-                </div>`;
-            chatBox.appendChild(div);
-            chatBox.scrollTo({ top: chatBox.scrollHeight, behavior: 'smooth' });
-        }
-    </script>
+        // ----- Event bindings -----
+        btnProvision.addEventListener('click', provision);
+        btnDeploy.addEventListener('click', deployAi);
+        btnPivot.addEventListener('click', pivot);
+        btnReset.addEventListener('click', resetAll);
+        chatSend.addEventListener('click', sendChat);
+        chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') sendChat();
+        });
+
+        // initial state
+        updateUi();
+        log('🟢 UI ready. Configure your Bridge URL and API Secret.', 'info');
+    })();
+</script>
 </body>
 </html>
